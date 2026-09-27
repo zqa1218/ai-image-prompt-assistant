@@ -35,6 +35,18 @@ chcp 65001 >nul
 title ai修图提示词助手
 cd /d "%~dp0"
 
+if not defined PW_WEB_PORT set "PW_WEB_PORT=5173"
+
+rem 已经在运行就直接开浏览器，避免又起一个实例撞端口
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $null = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Uri 'http://127.0.0.1:%PW_WEB_PORT%/api/health'; exit 0 } catch { exit 1 }"
+if not errorlevel 1 (
+  echo.
+  echo 服务已经在运行，正在打开浏览器...
+  echo.
+  start "" "http://127.0.0.1:%PW_WEB_PORT%/"
+  exit /b 0
+)
+
 if not exist "node.exe" (
   echo.
   echo 发布包不完整：缺少 node.exe。
@@ -59,7 +71,6 @@ echo 就绪后会自动打开浏览器；关闭本窗口即可停止。
 echo.
 
 if not defined PW_OPEN_BROWSER set "PW_OPEN_BROWSER=1"
-if not defined PW_WEB_PORT set "PW_WEB_PORT=5173"
 
 node.exe server\\index.mjs
 

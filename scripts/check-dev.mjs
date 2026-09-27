@@ -3,6 +3,7 @@
  * 结束后确认进程树被完整回收（Windows 上最容易出孤儿进程的地方）。
  */
 import { spawn, spawnSync } from 'node:child_process'
+import { readFileSync, readdirSync } from 'node:fs'
 import net from 'node:net'
 
 /** 自动挑空闲端口，这样即使你本地已经开着 dev 服务也不会撞车。 */
@@ -104,6 +105,14 @@ const webAfter = await reachable(WEB)
 const apiAfter = await reachable(`${API}/api/health`)
 check('前端端口已释放（无孤儿进程）', webAfter === null, String(webAfter))
 check('代理端口已释放（无孤儿进程）', apiAfter === null, String(apiAfter))
+
+// 批处理文件必须是纯 CRLF：混合行尾会让 cmd 把命令行从中间劈开，
+// 出现 "'onPolicy' is not recognized" 这类莫名其妙的解析错误。
+for (const file of readdirSync(process.cwd()).filter((name) => name.endsWith('.cmd'))) {
+  const raw = readFileSync(file)
+  const bareLf = (raw.toString('latin1').match(/(?<!\r)\n/g) ?? []).length
+  check(`${file} 为纯 CRLF 行尾`, bareLf === 0, `发现 ${bareLf} 处裸 LF`)
+}
 
 console.log('\n===== dev 编排检查 =====')
 for (const r of results) {

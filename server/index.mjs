@@ -282,6 +282,21 @@ function openBrowser(url) {
   }
 }
 
+/**
+ * 端口被占用是最常见的启动失败原因（重复启动），
+ * 直接抛 Node 堆栈用户看不懂，这里换成能照做的提示。
+ */
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[prompt-wizard] 端口 ${PORT} 已被占用，可能已经有一个实例在运行。`)
+    console.error(`[prompt-wizard] 已经在运行的话，直接打开 http://${HOST}:${PORT}/ 即可；`)
+    console.error(`[prompt-wizard] 想重开一个，请先关掉正在运行的那个窗口。`)
+  } else {
+    console.error(`[prompt-wizard] 启动失败：${err.message}`)
+  }
+  process.exit(1)
+})
+
 server.listen(PORT, HOST, () => {
   console.log(`[prompt-wizard] 服务已启动：http://${HOST}:${PORT}`)
   if (process.env.PW_OPEN_BROWSER === '1') {
