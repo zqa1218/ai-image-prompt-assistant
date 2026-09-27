@@ -1,6 +1,9 @@
 node_modules/
 dist/
 
+# 打包产物，不进版本库（由 scripts/build-portable.mjs 生成）
+release/
+
 # 本地配置与密钥，绝不提交
 .env
 .env.local

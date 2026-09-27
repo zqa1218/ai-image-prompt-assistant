@@ -6,6 +6,7 @@
  *   --upstream  额外打一次真实上游（需要网络），用假 key 验证错误归一化
  */
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -140,6 +141,42 @@ try {
     console.log(`\n[upstream] /api/models -> ${models.status} ${JSON.stringify(models.body)}`)
   } else {
     console.log('\n[提示] 加 --upstream 可额外打一次真实上游验证错误归一化')
+  }
+
+  // 静态托管是发布包的关键路径，dist 存在时一并验证
+  if (existsSync(path.join(process.cwd(), 'dist'))) {
+    const page = await fetch(`${BASE}/`)
+    const html = await page.text()
+    check(
+      '根路径返回前端页面',
+      page.status === 200 && html.includes('id="root"'),
+      `${page.status}`,
+    )
+
+    const assetList = await json('/data/elements.json')
+    check(
+      '静态资源可访问（元素库）',
+      assetList.status === 200 && Array.isArray(assetList.body?.elements),
+      `${assetList.status}`,
+    )
+
+    const miss = await fetch(`${BASE}/no-such-page`)
+    const missText = await miss.text()
+    check(
+      '未知路径回退到 index.html（前端路由兜底）',
+      miss.status === 200 && missText.includes('id="root"'),
+      `${miss.status}`,
+    )
+
+    const traversal = await fetch(`${BASE}/%2e%2e%2f%2e%2e%2fpackage.json`)
+    const traversalText = await traversal.text()
+    check(
+      '拒绝目录穿越',
+      !traversalText.includes('prompt-wizard'),
+      `${traversal.status}`,
+    )
+  } else {
+    console.log('\n[跳过] dist 不存在，略过静态托管检查（先运行 npm run build）')
   }
 } catch (err) {
   check('冒烟测试执行', false, err instanceof Error ? err.message : String(err))
