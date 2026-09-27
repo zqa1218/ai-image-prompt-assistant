@@ -3,7 +3,10 @@
  *
  * 产物：
  *   release/ai修图提示词助手/                   解压即用的目录
- *   release/ai修图提示词助手-v<版本>-win-x64.zip 发布用压缩包
+ *   release/ai-image-prompt-assistant-v<版本>-win-x64.zip  发布用压缩包
+ *
+ * zip 文件名刻意用 ASCII：GitHub 的 release 附件名会清洗掉非 ASCII 字符，
+ * 中文名会被截成 "ai.-...zip"。压缩包内的目录名与启动器仍是中文。
  *
  * 思路：把 Node 运行时一起打进去，用户不需要装任何东西，
  * 双击启动器就同时跑「本地代理 + 静态托管」，单进程单端口。
@@ -22,7 +25,10 @@ const RELEASE_DIR = path.join(ROOT, 'release')
 const STAGE = path.join(RELEASE_DIR, APP_NAME)
 
 const pkg = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8'))
-const ZIP_PATH = path.join(RELEASE_DIR, `${APP_NAME}-v${pkg.version}-win-x64.zip`)
+const ZIP_PATH = path.join(
+  RELEASE_DIR,
+  `ai-image-prompt-assistant-v${pkg.version}-win-x64.zip`,
+)
 
 const LAUNCHER = `@echo off
 chcp 65001 >nul
