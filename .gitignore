@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# 本地配置与密钥，绝不提交
+.env
+.env.local
+.prompt-wizard.json
+
+# 编辑器与系统
+.vscode/
+.idea/
+*.log
+Thumbs.db
+.DS_Store

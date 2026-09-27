@@ -1,0 +1,218 @@
+{
+  "id": "refine",
+  "name": "原图精修线",
+  "summary": "在不重画主体的前提下改进画面，输出中文通用图像编辑提示词。",
+  "outputContract": "four-section-cn",
+  "sharedAssets": ["analysis-framework"],
+  "assets": ["refine-four-section", "figure-base-rules"],
+  "directives": [
+    {
+      "when": { "field": "taskType", "includes": "质感升级" },
+      "label": "产品精修模板",
+      "instruction": "本次任务包含「质感升级」，按产品精修模板执行：主体保留，重点是质感升级而不是替换；不强行换背景；不改产品形态与文字。先在原图上指出要强化的方面（质感 / 光泽 / 标签 / 阴影），再写修改项。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "局部替换" },
+      "label": "局部替换的范围约束",
+      "instruction": "本次任务包含「局部替换」。只动用户指定的区域，其余区域逐像素保持一致；替换进来的物件必须延续原图的透视、材质、光照与投影方向，并在边界处与周围环境自然衔接，不留下可见接缝。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "人像局部修改" },
+      "label": "人像局部编辑",
+      "instruction": "本次任务包含「人像局部修改」。人物的身份、五官、发型、身体比例必须保持不变，只改用户指定的区域以及与这块区域直接相关的光影；不要把改动扩散到面部辨识特征上。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "置入物体" },
+      "label": "地台与环境物品专项",
+      "instruction": "本次任务包含「置入物体」，必须按 figure-base-rules 资产执行：新增物件要有明确支撑、重量、接触点与接触阴影，并匹配原图的镜头高度、地平线、透视方向、景深、环境色与投影方向；禁止悬空、穿模、错误缩放与不合理堆叠。若只摆放可独立移除的物品，必须在提示词里明确写出不新增地台、平台、地面替换、墙体、门窗与完整建筑。\n\n如果附带参考图，参考图里的物体才是要置入的内容：以它的形状、材质、颜色和磨损为依据，不要凭空改造成别的东西。\n\n放置要素必须逐项落实：\n- 方向建议阶段：每个方向都要给出建议的所在层次、水平位置、远近与交互关系，并说明依据（原图的光向、留白分布、透视方向、主体朝向、视线方向）。不要只给形容词。\n- 生成提示词阶段：把最终选定的层次、位置、远近、交互关系明确写进【修改项】，并写清它与原图已有物体之间的遮挡、接触点、接触阴影与投影方向。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "风格迁移" },
+      "label": "风格迁移",
+      "instruction": "本次任务包含「风格迁移」。只迁移用户勾选的视觉语言（背景、元素、特效、光线、色调、材质），原图的主体、身份与构图必须保持不变。迁移进来的每一项都要说明它落在原图的什么位置、如何与原图的光向、透视与景深对齐、与原图已有物体之间如何遮挡；不要整张照搬参考图，也不要把参考图的独特表达与可识别内容一起搬过来。用户没有勾选的项一律不要引入。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "生成场景" },
+      "label": "场景重建",
+      "instruction": "本次任务包含「生成场景」。先重建新视角下的受光关系再编译提示词：光源、遮挡物与环境反射固定在世界空间中。场景复杂度服从原图的画面信息层级，先区分主体清晰区、主导大形、次级细节与低细节留白，不因元素变多就让每一层都清楚。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "增加特效" },
+      "label": "光效为次级元素",
+      "instruction": "本次任务包含「增加特效」。光效只能作为次级元素：先表现真实物体本身，再加入克制的折射、微光、霜粒、火焰或粒子；禁止用烟雾、过曝或大面积发光覆盖材质细节。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "移除杂物" },
+      "label": "物体移除的补全要求",
+      "instruction": "本次任务包含「移除杂物」。移除后补全的区域必须延续原有的透视、材质与光照，不得留下涂抹痕迹、重复纹理或明显的克隆接缝。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "替换背景" },
+      "label": "换背景的遮挡重建",
+      "instruction": "本次任务包含「替换背景」。必须重建主体边缘、遮挡关系与落在新背景上的投影，保持原图光向与色温的一致性；主体边缘不得出现白边或抠图感。"
+    }
+  ],
+  "stages": [
+    {
+      "id": "intake",
+      "title": "接收",
+      "intent": "收集原图与修图需求。缺必填项时最多追问三个问题，已有信息不要重复问。",
+      "mode": "form",
+      "thinking": { "mode": "disabled" },
+      "fields": [
+        {
+          "key": "requirement",
+          "label": "修图需求",
+          "kind": "textarea",
+          "required": true,
+          "placeholder": "例：这张商品图想让质感更高级一些"
+        },
+        {
+          "key": "usage",
+          "label": "用途",
+          "kind": "multi",
+          "required": false,
+          "options": ["电商主图", "社媒", "印刷", "个人作品"]
+        },
+        {
+          "key": "taskType",
+          "label": "任务类型",
+          "kind": "multi",
+          "required": false,
+          "options": [
+            "质感升级",
+            "替换背景",
+            "移除杂物",
+            "局部替换",
+            "人像局部修改",
+            "增加特效",
+            "生成场景",
+            "置入物体",
+            "风格迁移"
+          ]
+        },
+        {
+          "key": "referenceRole",
+          "label": "参考图用途",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": [
+            "参考图里的物体要置入原图",
+            "参考构图与布局",
+            "参考光线",
+            "参考风格与质感"
+          ]
+        },
+        {
+          "key": "placementLayer",
+          "label": "所在层次",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": ["前景", "中景", "背景"]
+        },
+        {
+          "key": "placementHorizontal",
+          "label": "水平位置",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": [
+            "画面左侧边缘",
+            "画面右侧边缘",
+            "画面中间",
+            "主体左旁",
+            "主体右旁"
+          ]
+        },
+        {
+          "key": "placementDistance",
+          "label": "远近",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": ["近处（贴近镜头）", "中距离", "远处"]
+        },
+        {
+          "key": "interaction",
+          "label": "交互关系",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": [
+            "放置在平面",
+            "倚靠",
+            "悬挂",
+            "插入",
+            "堆叠",
+            "垂落",
+            "固定支撑",
+            "被主体持有"
+          ]
+        },
+        {
+          "key": "outputSize",
+          "label": "输出尺寸",
+          "kind": "multi",
+          "required": false,
+          "defaultValue": "原图尺寸",
+          "options": ["原图尺寸", "2K", "4K", "自定义"]
+        },
+        {
+          "key": "outputSizeCustom",
+          "label": "自定义尺寸",
+          "kind": "text",
+          "required": false,
+          "showWhen": { "field": "outputSize", "includes": "自定义" },
+          "placeholder": "例：2000×2500"
+        },
+        {
+          "key": "constraints",
+          "label": "约束",
+          "kind": "textarea",
+          "required": false,
+          "placeholder": "必须保留什么、绝对不能改什么"
+        }
+      ]
+    },
+    {
+      "id": "analyze",
+      "title": "原图分析",
+      "intent": "按九维事实层拆解原图，只写可见事实，不确定的标「疑似」。这一阶段不给出建议。",
+      "mode": "auto",
+      "thinking": { "mode": "disabled" }
+    },
+    {
+      "id": "direction",
+      "title": "方向建议",
+      "intent": "给出 2~3 个差异化方向。每个方向写清：改什么、保留什么、成像结果、代价与风险、适配通道。明确标出一个推荐项。",
+      "mode": "choice",
+      "thinking": { "mode": "enabled", "effort": "low" },
+      "minOptions": 2,
+      "maxOptions": 3
+    },
+    {
+      "id": "detail",
+      "title": "细化",
+      "intent": "根据用户选中的方向，补齐位置、材质、接触关系、光影融合等执行细节。信息不足时只问必要的追问，最多三个。",
+      "mode": "hybrid",
+      "thinking": { "mode": "disabled" }
+    },
+    {
+      "id": "compose",
+      "title": "生成提示词",
+      "intent": "按四段式骨架组装最终中文提示词，并给出一行「喂给谁」建议。",
+      "mode": "auto",
+      "thinking": { "mode": "enabled", "effort": "low" },
+      "outputContract": "four-section-cn"
+    },
+    {
+      "id": "iterate",
+      "title": "迭代",
+      "intent": "接收用户对结果的反馈。局部问题在提示词上定点修改；涉及主体、背景或布局的结构问题，回到原图重新编译。每轮只改一处。",
+      "mode": "free",
+      "thinking": { "mode": "disabled" }
+    }
+  ]
+}

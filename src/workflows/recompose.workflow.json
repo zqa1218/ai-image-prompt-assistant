@@ -1,0 +1,106 @@
+{
+  "id": "recompose",
+  "name": "参考重构线",
+  "summary": "把原图当作参考与灵感，产出同语言不同画面的新图，输出英文 Midjourney 提示词与参数矩阵。",
+  "outputContract": "mj-prompt-en",
+  "sharedAssets": ["analysis-framework"],
+  "assets": ["recompose-decompose", "mj-params"],
+  "directives": [
+    {
+      "when": { "field": "referenceRole", "includes": "保持同一位人物" },
+      "label": "人物一致性",
+      "instruction": "本次需要保持同一位人物。提示词中写清该人物的稳定外观锚点，并在参数矩阵中说明用 Omni Reference 或 --cref 的做法；不要把风格参考图当人物参考，两者不能是同一张图承担两个职责。"
+    },
+    {
+      "when": { "field": "referenceRole", "includes": "内容与构图也照搬" },
+      "label": "高保真复刻的边界",
+      "instruction": "用户希望内容与构图也接近参考图。仍需继承手法而非独特表达：输出中要说明哪些是可迁移的视觉语言、哪些属于原图独有的表达不宜照搬，避免复制可识别的受保护内容。"
+    }
+  ],
+  "stages": [
+    {
+      "id": "intake",
+      "title": "接收",
+      "intent": "收集参考图与目标需求。先确认参考图承担的是「谁」还是「怎么拍」。缺必填项时最多追问三个问题。",
+      "mode": "form",
+      "thinking": { "mode": "disabled" },
+      "fields": [
+        {
+          "key": "requirement",
+          "label": "出图需求",
+          "kind": "textarea",
+          "required": true,
+          "placeholder": "例：用这套写真的语言，换一种风格重新拍一组"
+        },
+        {
+          "key": "referenceRole",
+          "label": "参考图职责",
+          "kind": "select",
+          "required": false,
+          "options": ["只借风格与拍法", "保持同一位人物", "内容与构图也照搬"]
+        },
+        {
+          "key": "usage",
+          "label": "用途",
+          "kind": "multi",
+          "required": false,
+          "options": ["个人创作", "社媒", "商业提案", "印刷"]
+        },
+        {
+          "key": "outputSize",
+          "label": "输出尺寸",
+          "kind": "multi",
+          "required": false,
+          "defaultValue": "原图尺寸",
+          "options": ["原图尺寸", "2K", "4K", "自定义"]
+        },
+        {
+          "key": "outputSizeCustom",
+          "label": "自定义尺寸",
+          "kind": "text",
+          "required": false,
+          "showWhen": { "field": "outputSize", "includes": "自定义" },
+          "placeholder": "例：2000×2500"
+        }
+      ]
+    },
+    {
+      "id": "analyze",
+      "title": "反向拆解",
+      "intent": "按九维事实层拆解原图，并追加风格机制层：把「高级、氛围感」翻译成白平衡、曝光、反差、高光、锐度、噪点、压缩与景深。人像走摄影企划拆解，非人像走七层结构拆解。",
+      "mode": "auto",
+      "thinking": { "mode": "disabled" }
+    },
+    {
+      "id": "direction",
+      "title": "方向建议",
+      "intent": "给出 3 个差异化视觉语言方向。每个方向写清：换成什么语言、保留原图哪条手法、成像结果、代价与风险。明确标出推荐项。",
+      "mode": "choice",
+      "thinking": { "mode": "enabled", "effort": "low" },
+      "minOptions": 3,
+      "maxOptions": 3
+    },
+    {
+      "id": "detail",
+      "title": "细化",
+      "intent": "根据用户选中的方向，补齐主体、环境、构图与机位、光线、材质、成像机制的具体取值。需要元素候选时从元素库检索，再由你选择最匹配的，不要照搬候选列表。",
+      "mode": "hybrid",
+      "thinking": { "mode": "disabled" }
+    },
+    {
+      "id": "compose",
+      "title": "生成 MJ 提示词",
+      "intent": "输出中文方向说明 + 英文 Midjourney 提示词 + 参数矩阵 + 提交前 QA 清单。参数按 mj-params 资产的决策表选择。同时说明由用户本人提交，程序不代为操作。",
+      "mode": "auto",
+      "thinking": { "mode": "enabled", "effort": "low" },
+      "outputContract": "mj-prompt-en"
+    },
+    {
+      "id": "iterate",
+      "title": "迭代",
+      "intent": "接收反馈后重编译提示词，每轮只改一个变量。新一轮以原始参考图为基准，不把上一轮生成图当作新的视觉输入。",
+      "mode": "free",
+      "thinking": { "mode": "disabled" }
+    }
+  ]
+}
