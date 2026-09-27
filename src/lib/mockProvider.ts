@@ -1,7 +1,7 @@
 import type { Artifact, DirectionOption, Provider, ReferenceItem } from './wizardTypes.ts'
 
 /**
- * M2 用的假数据提供方：不联网也能把六步流程完整走通。
+ * 演示模式的假数据提供方：不联网也能把六步流程完整走通。
  * M3 会换成真实 DeepSeek 调用，接口契约保持不变。
  */
 const DELAY = 450
@@ -10,8 +10,8 @@ function wait<T>(value: T, ms = DELAY): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms))
 }
 
-/** 每段占位文案都带上这句，避免被当成真实分析结果（接入真实模型后整体消失）。 */
-const PLACEHOLDER = '【M2 占位数据】以下内容与示例无关，不会读取你上传的图片。\n\n'
+/** 每段示例文案都带上这句，避免被当成真实分析结果。 */
+const PLACEHOLDER = '【演示数据】以下内容来自内置示例，不会读取你上传的图片。\n\n'
 
 const REFINE_ANALYSIS = `【主体】深灰色陶瓷马克杯，杯口朝向斜上方，位于画面中偏右下，约占画幅 42%。
 【构图】3:4 竖幅，机位略高于杯口，可视地平线约在画面下三分之一处，透视方向自左上向右下，视觉中心落在杯沿，右上角留白。
@@ -144,21 +144,21 @@ export const mockProvider: Provider = {
         id: 'mock-bg',
         category: '背景',
         label: '冷灰渐变背板',
-        description: '（M2 占位）自上而下由浅灰过渡到中灰的无缝背板，表面为哑光涂料，弱颗粒。',
+        description: '（示例）自上而下由浅灰过渡到中灰的无缝背板，表面为哑光涂料，弱颗粒。',
         source: '参考图1',
       },
       {
         id: 'mock-prop',
         category: '元素',
         label: '亚麻布与散落咖啡豆',
-        description: '（M2 占位）细密棉麻织物，褶皱有厚度与边缘落影；咖啡豆半哑光蜡质感，中缝线清晰。',
+        description: '（示例）细密棉麻织物，褶皱有厚度与边缘落影；咖啡豆半哑光蜡质感，中缝线清晰。',
         source: '参考图1',
       },
       {
         id: 'mock-light',
         category: '光线',
         label: '右上侧逆光',
-        description: '（M2 占位）单侧硬光自右上入射，物体右侧出现窄高光带，投影短促朝左下。',
+        description: '（示例）单侧硬光自右上入射，物体右侧出现窄高光带，投影短促朝左下。',
         source: '参考图2',
       },
     ]
@@ -174,7 +174,7 @@ export const mockProvider: Provider = {
   async askDetail(ctx, question) {
     const scope = ctx.workflow.id === 'refine' ? '保留项与禁止项' : '参考图职责与参数'
     return wait(
-      `（M2 假数据）你问的是「${question}」。这个问题的答案会影响${scope}的写法，` +
+      `（演示模式）你问的是「${question}」。这个问题的答案会影响${scope}的写法，` +
         `接入真实模型后这里会给出具体判断和两三种可选写法。`,
       400,
     )

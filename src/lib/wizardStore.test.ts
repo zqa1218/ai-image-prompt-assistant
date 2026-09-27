@@ -29,7 +29,7 @@ describe('六步状态机', () => {
     expect(api().stageIndex).toBe(1)
     expect(api().records['analyze']?.status).toBe('ready')
     expect(api().records['analyze']?.output).toContain('【主体】')
-    expect(api().records['analyze']?.output).toContain('占位数据')
+    expect(api().records['analyze']?.output).toContain('演示数据')
 
     await api().advance()
     expect(api().stageIndex).toBe(2)

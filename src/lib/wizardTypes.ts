@@ -91,7 +91,7 @@ export type WizardContext = {
 }
 
 export type Provider = {
-  /** mock = M2 占位数据；live = 真实模型调用。用于在界面明确标注。 */
+  /** mock = 内置示例数据；live = 真实模型调用。用于在界面明确标注。 */
   kind: 'mock' | 'live'
   analyze(ctx: WizardContext): Promise<string>
   /** 从参考图提取可迁移的成分；没有参考图时返回空数组 */
