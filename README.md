@@ -8,14 +8,14 @@
 
 ## 安装（普通用户）
 
-到 Releases 页下载 **`AI修图提示词助手-Setup-0.2.0.exe`**，双击后一路到底，全程只有一次 UAC 提权确认：
+到 Releases 页下载 **`AI-Prompt-Wizard-Setup-0.2.0.exe`**（安装后程序名显示为「AI修图提示词助手」），双击后一路到底，全程只有一次 UAC 提权确认：
 
 - 主程序装到 `C:\Program Files\AI修图提示词助手`，自动建桌面与开始菜单快捷方式，装完直接启动
 - 自动把 Photoshop 面板 `com.promptwizard.photoshop-link` 写进本机所有 Photoshop 的 `Plug-ins` 目录（先查注册表定位，找不到再扫默认安装路径），重启 Photoshop 后可在「窗口 > 插件」里看到
 - 没装 Photoshop、或面板写入失败都不影响使用：助手还有不需要任何插件的直连通道
 - 卸载时一并移除面板插件，但保留你的设置与对话记录
 
-不想安装可以用便携版 `AI修图提示词助手-0.2.0-x64.exe`，免安装直接运行；想用面板通道时再执行一次根目录的 `安装 Photoshop 面板（管理员一次）.cmd`。
+不想安装可以用便携版（Releases 里的 `AI-Prompt-Wizard-Portable-0.2.0.exe`，本地构建叫 `AI修图提示词助手-0.2.0-x64.exe`），免安装直接运行；想用面板通道时再执行一次根目录的 `安装 Photoshop 面板（管理员一次）.cmd`。
 
 ## 能做什么
 **两条工作路径，同一套分析流程**
