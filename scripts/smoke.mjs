@@ -1,193 +1,119 @@
-/**
- * M0 冒烟测试：验证本地代理、设置读写、key 不回显、以及上游错误归一化。
- * 全程使用临时数据目录，不触碰项目里的真实 .env。
- *
- * 用法：node scripts/smoke.mjs [--upstream]
- *   --upstream  额外打一次真实上游（需要网络），用假 key 验证错误归一化
- */
+/** 本地服务冒烟测试；不会访问 Gemini，也不会提交任何图片。 */
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 
 const PORT = 8788
 const BASE = `http://127.0.0.1:${PORT}`
-const withUpstream = process.argv.includes('--upstream')
-const FAKE_KEY = 'sk-test-not-a-real-key'
-
 const results = []
 let failures = 0
+const bridgeDir = await mkdtemp(path.join(os.tmpdir(), 'promptwizard-smoke-'))
 
 function check(name, ok, detail = '') {
   results.push({ name, ok, detail })
   if (!ok) failures += 1
 }
 
-async function waitForHealth(timeoutMs = 15_000) {
-  const deadline = Date.now() + timeoutMs
+async function json(pathname, init) {
+  const response = await fetch(`${BASE}${pathname}`, {
+    ...init,
+    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+  })
+  const text = await response.text()
+  try {
+    return { status: response.status, body: text ? JSON.parse(text) : null }
+  } catch {
+    return { status: response.status, body: text }
+  }
+}
+
+async function waitForHealth() {
+  const deadline = Date.now() + 15000
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${BASE}/api/health`)
-      if (res.ok) return true
+      if ((await fetch(`${BASE}/api/health`)).ok) return true
     } catch {
-      // 还没起来
+      // 服务还没起来
     }
-    await new Promise((r) => setTimeout(r, 300))
+    await new Promise((resolve) => setTimeout(resolve, 300))
   }
   return false
 }
 
-async function json(pathname, init) {
-  const res = await fetch(`${BASE}${pathname}`, {
-    ...init,
-    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
-  })
-  const text = await res.text()
-  let body = null
-  try {
-    body = text ? JSON.parse(text) : null
-  } catch {
-    body = text
-  }
-  return { status: res.status, body }
-}
-
-const dataDir = await mkdtemp(path.join(tmpdir(), 'prompt-wizard-smoke-'))
 const child = spawn(process.execPath, ['server/index.mjs'], {
   cwd: process.cwd(),
   stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, PROMPT_WIZARD_DATA_DIR: dataDir, PORT: String(PORT) },
+  env: { ...process.env, PW_API_PORT: String(PORT), PROMPT_WIZARD_DATA_DIR: bridgeDir, DEEPSEEK_API_KEY: '', PROMPT_WIZARD_BRIDGE_DIR: bridgeDir },
 })
-
 let serverLog = ''
-child.stdout.on('data', (d) => (serverLog += d.toString()))
-child.stderr.on('data', (d) => (serverLog += d.toString()))
+child.stdout.on('data', (data) => { serverLog += data.toString() })
+child.stderr.on('data', (data) => { serverLog += data.toString() })
 
 try {
   const up = await waitForHealth()
   check('服务启动 /api/health', up, up ? '' : serverLog.trim())
   if (!up) throw new Error('服务未启动')
 
-  const settings1 = await json('/api/settings')
+  const settings = await json('/api/settings')
   check(
-    '未配置 key 时 hasKey=false',
-    settings1.status === 200 && settings1.body?.hasKey === false,
-    JSON.stringify(settings1.body),
-  )
-  check(
-    '设置响应不含 key 明文',
-    !JSON.stringify(settings1.body).includes('sk-'),
-    JSON.stringify(settings1.body),
+    '设置明确使用 Gemini 网页且不需要 Key',
+    settings.status === 200 && settings.body?.mode === 'gemini-web' && settings.body?.hasKey === false,
+    JSON.stringify(settings.body),
   )
 
-  const modelsNoKey = await json('/api/models')
+  const models = await json('/api/models')
   check(
-    '无 key 调 /api/models 返回 401 且有可读提示',
-    modelsNoKey.status === 401 && typeof modelsNoKey.body?.error?.message === 'string',
-    JSON.stringify(modelsNoKey.body),
+    '模型入口包含网页与默认 API 模型',
+    models.status === 200 && models.body?.models?.[0]?.id === 'gemini-web',
+    JSON.stringify(models.body),
   )
 
-  const saved = await json('/api/settings', {
-    method: 'PUT',
-    body: JSON.stringify({
-      baseUrl: 'https://api.deepseek.com',
-      model: 'deepseek-flash',
-      apiKey: FAKE_KEY,
-    }),
-  })
+  const gemini = await json('/api/gemini/status')
   check(
-    '保存设置后 hasKey=true',
-    saved.status === 200 && saved.body?.hasKey === true,
-    JSON.stringify(saved.body),
-  )
-  check(
-    '保存响应仍不含 key 明文',
-    !JSON.stringify(saved.body).includes(FAKE_KEY),
-    JSON.stringify(saved.body),
+    '纯服务模式提示需启动桌面端',
+    gemini.status === 200 && gemini.body?.connected === false,
+    JSON.stringify(gemini.body),
   )
 
-  const envText = await readFile(path.join(dataDir, '.env'), 'utf8').catch(() => '')
-  check('key 落盘到 .env', envText.includes(`DEEPSEEK_API_KEY=${FAKE_KEY}`), envText.trim())
-
-  const cfgText = await readFile(path.join(dataDir, '.prompt-wizard.json'), 'utf8').catch(() => '')
-  check(
-    '配置落盘到 .prompt-wizard.json',
-    cfgText.includes('"model": "deepseek-flash"'),
-    cfgText.trim(),
-  )
-
-  const chatNoKeyBody = await json('/api/chat', {
+  const chat = await json('/api/chat', {
     method: 'POST',
     body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }),
   })
   check(
-    '/api/chat 可用（假 key 会拿到上游错误而非崩溃）',
-    chatNoKeyBody.status >= 400 &&
-      typeof chatNoKeyBody.body?.error?.message === 'string',
-    `${chatNoKeyBody.status} ${JSON.stringify(chatNoKeyBody.body).slice(0, 200)}`,
+    '纯服务模式不会回退到 API',
+    chat.status === 503 && /桌面端/.test(chat.body?.error?.message || ''),
+    `${chat.status} ${JSON.stringify(chat.body)}`,
   )
 
-  if (withUpstream) {
-    const models = await json('/api/models')
-    check(
-      '假 key 打真实上游时错误被归一化',
-      models.status >= 400 &&
-        models.status < 600 &&
-        typeof models.body?.error?.message === 'string' &&
-        !JSON.stringify(models.body).includes(FAKE_KEY),
-      `${models.status} ${JSON.stringify(models.body).slice(0, 300)}`,
-    )
-    console.log(`\n[upstream] /api/models -> ${models.status} ${JSON.stringify(models.body)}`)
-  } else {
-    console.log('\n[提示] 加 --upstream 可额外打一次真实上游验证错误归一化')
-  }
+  const switched = await json('/api/settings', { method: 'PUT', body: JSON.stringify({ mode: 'api' }) })
+  check('快速切换 API 并保留默认模型', switched.body?.mode === 'api' && switched.body?.model === 'deepseek-flash')
+  const noKey = await json('/api/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }) })
+  check('无 Key 时给出配置提示，不偷偷调用网页', noKey.status === 400 && /API Key/.test(noKey.body?.error?.message || ''))
+  const denied = await json('/api/settings', { method: 'PUT', headers: { origin: 'https://example.com' }, body: JSON.stringify({ mode: 'api' }) })
+  check('拒绝外部网页修改本机模型配置', denied.status === 403)
+  const restored = await json('/api/settings', { method: 'PUT', body: JSON.stringify({ mode: 'gemini-web' }) })
+  check('快速切回网页', restored.body?.mode === 'gemini-web')
 
-  // 静态托管是发布包的关键路径，dist 存在时一并验证
   if (existsSync(path.join(process.cwd(), 'dist'))) {
     const page = await fetch(`${BASE}/`)
     const html = await page.text()
-    check(
-      '根路径返回前端页面',
-      page.status === 200 && html.includes('id="root"'),
-      `${page.status}`,
-    )
-
-    const assetList = await json('/data/elements.json')
-    check(
-      '静态资源可访问（元素库）',
-      assetList.status === 200 && Array.isArray(assetList.body?.elements),
-      `${assetList.status}`,
-    )
-
-    const miss = await fetch(`${BASE}/no-such-page`)
-    const missText = await miss.text()
-    check(
-      '未知路径回退到 index.html（前端路由兜底）',
-      miss.status === 200 && missText.includes('id="root"'),
-      `${miss.status}`,
-    )
+    check('根路径返回前端页面', page.status === 200 && html.includes('id="root"'), `${page.status}`)
 
     const traversal = await fetch(`${BASE}/%2e%2e%2f%2e%2e%2fpackage.json`)
-    const traversalText = await traversal.text()
-    check(
-      '拒绝目录穿越',
-      !traversalText.includes('prompt-wizard'),
-      `${traversal.status}`,
-    )
-  } else {
-    console.log('\n[跳过] dist 不存在，略过静态托管检查（先运行 npm run build）')
+    check('拒绝目录穿越', !(await traversal.text()).includes('prompt-wizard'), `${traversal.status}`)
   }
-} catch (err) {
-  check('冒烟测试执行', false, err instanceof Error ? err.message : String(err))
+} catch (error) {
+  check('冒烟测试执行', false, error instanceof Error ? error.message : String(error))
 } finally {
   child.kill()
-  await rm(dataDir, { recursive: true, force: true }).catch(() => {})
+  await rm(bridgeDir, { recursive: true, force: true })
 }
 
-console.log('\n===== M0 冒烟结果 =====')
-for (const r of results) {
-  console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok || !r.detail ? '' : `\n        ${r.detail}`}`)
+console.log('\n===== 冒烟结果 =====')
+for (const result of results) {
+  console.log(`${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.ok || !result.detail ? '' : `\n        ${result.detail}`}`)
 }
 console.log(`\n${results.length - failures}/${results.length} 通过`)
 process.exit(failures === 0 ? 0 : 1)

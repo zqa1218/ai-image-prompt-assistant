@@ -2,16 +2,18 @@ import { spawn } from 'node:child_process'
 import http from 'node:http'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { Readable } from 'node:stream'
+import { sendJson, sendText, joinUrl, upstreamHeaders, normalizeUpstreamError } from './deepseek.mjs'
+import { PROJECT_ROOT, publicSettings, readSettings, updateSettings } from './config.mjs'
 import {
-  normalizeModels,
-  normalizeUpstreamError,
-  joinUrl,
-  sendJson,
-  sendText,
-  upstreamHeaders,
-} from './deepseek.mjs'
-import { PROJECT_ROOT, resolveSettings, writeConfig, writeEnvKey } from './config.mjs'
+  attachPhotoshopBridge,
+  captureFromPhotoshop,
+  photoshopStatus,
+} from './photoshop-bridge.mjs'
+import {
+  captureViaPhotoshopCom,
+  listPhotoshopDocuments,
+  photoshopProcessRunning,
+} from './photoshop-com.mjs'
 
 /**
  * 监听端口。两种运行方式对端口的叫法不同：
@@ -24,6 +26,7 @@ const PORT = Number(
 )
 const HOST = '127.0.0.1'
 const MAX_BODY_BYTES = 60 * 1024 * 1024
+let activeChats = 0
 
 /** 生产包靠这里托管前端；开发时前端走 Vite，这个目录可能不存在或已过期。 */
 const DIST_DIR = path.join(PROJECT_ROOT, 'dist')
@@ -54,6 +57,8 @@ const server = http.createServer((req, res) => {
   })
 })
 
+await attachPhotoshopBridge(server, PORT)
+
 async function handle(req, res) {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`)
   const route = `${req.method} ${url.pathname}`
@@ -62,49 +67,123 @@ async function handle(req, res) {
     return serveStatic(res, url.pathname)
   }
 
+  const localOrigins = [PORT, Number(process.env.PW_WEB_PORT || 5173), Number(process.env.PW_WEB_PORT || 5173) + 1000]
+    .flatMap((port) => [`http://127.0.0.1:${port}`, `http://localhost:${port}`])
+  if (req.headers.origin && !localOrigins.includes(req.headers.origin)) {
+    return sendJson(res, 403, { error: { message: '拒绝非本机助手页面的请求' } })
+  }
+  if (['POST', 'PUT'].includes(req.method) && !req.headers['content-type']?.startsWith('application/json')) {
+    return sendJson(res, 415, { error: { message: '仅接受 JSON 请求' } })
+  }
+
   switch (route) {
     case 'GET /api/health':
       return sendJson(res, 200, { ok: true })
 
     case 'GET /api/settings': {
-      const s = await resolveSettings()
-      return sendJson(res, 200, {
-        baseUrl: s.baseUrl,
-        model: s.model,
-        hasKey: s.hasKey,
-        keySource: s.keySource,
-      })
+      return sendJson(res, 200, publicSettings())
     }
 
     case 'PUT /api/settings': {
-      const body = await readJsonBody(req)
-      if (body === null) return sendJson(res, 400, { error: { message: '请求体不是合法 JSON' } })
-
-      if (typeof body.apiKey === 'string' && body.apiKey.trim()) {
-        await writeEnvKey(body.apiKey.trim())
-      }
-      await writeConfig({
-        baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
-        model: typeof body.model === 'string' ? body.model : undefined,
-      })
-      const s = await resolveSettings()
-      return sendJson(res, 200, {
-        baseUrl: s.baseUrl,
-        model: s.model,
-        hasKey: s.hasKey,
-        keySource: s.keySource,
-      })
+      if (activeChats) return sendJson(res, 409, { error: { message: '模型正在回复，请完成后再切换模式或修改配置' } })
+      try { return sendJson(res, 200, updateSettings(await readJsonBody(req))) }
+      catch (error) { return sendJson(res, 400, { error: { message: describe(error) } }) }
     }
 
     case 'GET /api/models':
-      return handleListModels(res)
+      return sendJson(res, 200, { models: [{ id: 'gemini-web', name: 'Gemini 网页当前模型', supportsVision: true }, { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', supportsVision: true }] })
+
+    case 'POST /api/gemini/reset': {
+      const body = await readJsonBody(req)
+      if (typeof body?.conversationId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.conversationId)) return sendJson(res, 400, { error: { message: '缺少有效的图片对话标识' } })
+      if (!globalThis.promptWizardGeminiWeb) return sendJson(res, 503, { error: { message: '请启动桌面端' } })
+      await globalThis.promptWizardGeminiWeb.resetConversation(body.conversationId)
+      return sendJson(res, 200, { ok: true })
+    }
+
+    case 'GET /api/gemini/status':
+      return handleGeminiStatus(res)
+
+    case 'POST /api/gemini/open':
+      return handleGeminiOpen(req, res)
 
     case 'POST /api/chat':
-      return handleChat(req, res)
+      activeChats += 1
+      try { return await handleChat(req, res) }
+      finally { activeChats -= 1 }
+
+    case 'GET /api/photoshop/status':
+      return handlePhotoshopStatus(res)
+
+    case 'GET /api/photoshop/documents':
+      return handlePhotoshopDocuments(res)
+
+    case 'POST /api/photoshop/capture':
+      return handlePhotoshopCapture(req, res)
 
     default:
       return sendJson(res, 404, { error: { message: `未知路由 ${route}` } })
   }
+}
+
+/**
+ * Photoshop 有两条连接通道：
+ * - uxp：装了 Photoshop 面板插件，插件主动连回本服务（面板方式）
+ * - com：不装任何插件，直接用 Photoshop 自带的 COM 自动化导出画布
+ * 两条都不需要打开 UXP Developer Tools。
+ */
+async function handlePhotoshopStatus(res) {
+  if (photoshopStatus().connected) {
+    return sendJson(res, 200, {
+      connected: true,
+      mode: 'uxp',
+      detail: '已通过 Photoshop 面板连接',
+    })
+  }
+  if (await photoshopProcessRunning()) {
+    return sendJson(res, 200, {
+      connected: true,
+      mode: 'com',
+      detail: '已检测到 Photoshop，可直接读取画布',
+    })
+  }
+  return sendJson(res, 200, {
+    connected: false,
+    mode: 'none',
+    detail: '没检测到 Photoshop，请先打开 Photoshop',
+  })
+}
+
+async function handlePhotoshopDocuments(res) {
+  if (!(await photoshopProcessRunning())) {
+    return sendJson(res, 200, { documents: [] })
+  }
+  try {
+    return sendJson(res, 200, { documents: await listPhotoshopDocuments() })
+  } catch (err) {
+    return sendJson(res, 200, { documents: [], error: describe(err) })
+  }
+}
+
+async function handlePhotoshopCapture(req, res) {
+  const body = await readJsonBody(req)
+  const role = body?.role === 'reference' ? 'reference' : 'original'
+  const index = Number.isInteger(body?.index) ? body.index : -1
+
+  if (photoshopStatus().connected) {
+    return sendJson(res, 200, { image: await captureFromPhotoshop(role), source: 'uxp' })
+  }
+
+  if (!(await photoshopProcessRunning())) {
+    return sendJson(res, 503, {
+      error: { message: '没有检测到 Photoshop，请先打开 Photoshop 并打开一张图' },
+    })
+  }
+
+  return sendJson(res, 200, {
+    image: await captureViaPhotoshopCom({ role, index }),
+    source: 'com',
+  })
 }
 
 /**
@@ -157,84 +236,57 @@ function streamFile(res, filePath) {
   createReadStream(filePath).pipe(res)
 }
 
-async function handleListModels(res) {
-  const settings = await resolveSettings()
-  if (!settings.apiKey) {
-    return sendJson(res, 401, {
-      error: { message: '尚未配置 API Key，请先在设置页填写' },
-    })
-  }
-
-  let upstream
-  try {
-    upstream = await fetch(joinUrl(settings.baseUrl, 'models'), {
-      headers: upstreamHeaders(settings.apiKey),
-      signal: AbortSignal.timeout(20_000),
-    })
-  } catch (err) {
-    return sendJson(res, 502, {
-      error: { message: `无法连接上游（${settings.baseUrl}）：${describe(err)}` },
-    })
-  }
-
-  if (!upstream.ok) {
-    return sendJson(res, upstream.status, await normalizeUpstreamError(upstream))
-  }
-
-  const payload = await upstream.json().catch(() => null)
-  if (!payload) {
-    return sendJson(res, 502, { error: { message: '上游返回的不是合法 JSON' } })
-  }
-  return sendJson(res, 200, normalizeModels(payload))
-}
-
 async function handleChat(req, res) {
-  const settings = await resolveSettings()
-  if (!settings.apiKey) {
-    return sendJson(res, 401, {
-      error: { message: '尚未配置 API Key，请先在设置页填写' },
-    })
-  }
-
   const body = await readJsonBody(req)
-  if (body === null || typeof body !== 'object') {
+  if (body === null || typeof body !== 'object' || !Array.isArray(body.messages) || !body.messages.length) {
     return sendJson(res, 400, { error: { message: '请求体不是合法 JSON' } })
   }
-
-  const wantsStream = body.stream === true
-  const payload = { ...body, model: body.model ?? settings.model }
-
-  let upstream
-  try {
-    upstream = await fetch(joinUrl(settings.baseUrl, 'chat/completions'), {
-      method: 'POST',
-      headers: upstreamHeaders(settings.apiKey),
-      body: JSON.stringify(payload),
-      signal: wantsStream ? undefined : AbortSignal.timeout(180_000),
+  const settings = readSettings()
+  if (settings.mode === 'api') {
+    if (!settings.apiKey) return sendJson(res, 400, { error: { message: '请先在设置中填写 API Key（Gemini Pro 会员不包含 DeepSeek API）' } })
+    const upstreamBody = { model: settings.model, messages: body.messages, stream: false }
+    for (const key of ['thinking', 'reasoning_effort', 'temperature', 'response_format', 'max_tokens']) {
+      if (body[key] !== undefined) upstreamBody[key] = body[key]
+    }
+    const upstream = await fetch(joinUrl(settings.baseUrl, 'chat/completions'), {
+      method: 'POST', headers: upstreamHeaders(settings.apiKey), body: JSON.stringify(upstreamBody),
+      signal: AbortSignal.timeout(180000), redirect: 'error',
     })
-  } catch (err) {
-    return sendJson(res, 502, {
-      error: { message: `无法连接上游（${settings.baseUrl}）：${describe(err)}` },
+    if (!upstream.ok) return sendJson(res, upstream.status, await normalizeUpstreamError(upstream))
+    return sendJson(res, 200, await upstream.json())
+  }
+  const bridge = globalThis.promptWizardGeminiWeb
+  if (!bridge) {
+    return sendJson(res, 503, {
+      error: { message: 'Gemini 网页桥接仅在桌面端可用，请启动桌面版助手' },
     })
   }
+  const content = await bridge.submit(body)
+  return sendJson(res, 200, {
+    choices: [{ message: { role: 'assistant', content } }],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  })
+}
 
-  if (!upstream.ok) {
-    return sendJson(res, upstream.status, await normalizeUpstreamError(upstream))
-  }
-
-  if (wantsStream) {
-    res.writeHead(200, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-cache, no-transform',
-      connection: 'keep-alive',
+async function handleGeminiStatus(res) {
+  const bridge = globalThis.promptWizardGeminiWeb
+  if (!bridge) {
+    return sendJson(res, 200, {
+      connected: false,
+      detail: '请启动桌面版助手以使用 Gemini 网页桥接',
     })
-    if (!upstream.body) return res.end()
-    Readable.fromWeb(upstream.body).on('error', () => res.end()).pipe(res)
-    return
   }
+  return sendJson(res, 200, await bridge.status())
+}
 
-  const text = await upstream.text()
-  return sendText(res, 200, text)
+async function handleGeminiOpen(req, res) {
+  const bridge = globalThis.promptWizardGeminiWeb
+  if (!bridge) {
+    return sendJson(res, 503, { error: { message: '请启动桌面版助手' } })
+  }
+  const body = await readJsonBody(req)
+  const email = typeof body?.email === 'string' ? body.email.trim() : ''
+  return sendJson(res, 200, email ? await bridge.openLogin(email) : await bridge.openLogin())
 }
 
 async function readJsonBody(req) {
@@ -297,9 +349,10 @@ server.on('error', (err) => {
   process.exit(1)
 })
 
-server.listen(PORT, HOST, () => {
-  console.log(`[prompt-wizard] 服务已启动：http://${HOST}:${PORT}`)
-  if (process.env.PW_OPEN_BROWSER === '1') {
-    openBrowser(`http://${HOST}:${PORT}/`)
-  }
+export const ready = new Promise((resolve) => {
+  server.listen(PORT, HOST, () => {
+    console.log(`[prompt-wizard] 服务已启动：http://${HOST}:${PORT}`)
+    if (process.env.PW_OPEN_BROWSER === '1') openBrowser(`http://${HOST}:${PORT}/`)
+    resolve()
+  })
 })

@@ -24,8 +24,10 @@ export const ASSET_IDS: string[] = Object.keys(DEFAULT_ASSETS).sort()
 /** 每份资产的出处，用于在资产页标注来源 skill。 */
 export const ASSET_SOURCES: Record<string, string> = {
   'analysis-framework': '自有资产（提炼自两条工作流的共享阶段 1）',
+  'gemini-edit-prompt': '本项目 Gemini 多模态对话协议',
   'refine-four-section': 'gpt-image-2',
   'figure-base-rules': 'figure-base-environment-props',
+  'wenjun-cos-retouch': '吻君｜真人 Cosplay 摄影后期 Skill V2.0',
   'recompose-decompose': 'nuyoah-xiezhen-prompt + prompt-extractor',
   'mj-params': 'midjourney-image',
 }

@@ -4,16 +4,26 @@
 
 把一张原图和你的需求，编译成可以直接使用的提示词。
 
-面向 AI 修图与生图：填一次 API Key，选一条工作路径，上传原图和参考图，程序分阶段分析、给出可点选的方向，最后产出可以直接粘贴到图像模型的提示词。
+面向 AI 修图与生图：登录一次 Gemini 网页，选一条工作路径，上传原图和参考图，程序分阶段分析、给出可点选的方向，最后产出可以直接使用的提示词。
+
+## 安装（普通用户）
+
+到 Releases 页下载 **`AI修图提示词助手-Setup-0.2.0.exe`**，双击后一路到底，全程只有一次 UAC 提权确认：
+
+- 主程序装到 `C:\Program Files\AI修图提示词助手`，自动建桌面与开始菜单快捷方式，装完直接启动
+- 自动把 Photoshop 面板 `com.promptwizard.photoshop-link` 写进本机所有 Photoshop 的 `Plug-ins` 目录（先查注册表定位，找不到再扫默认安装路径），重启 Photoshop 后可在「窗口 > 插件」里看到
+- 没装 Photoshop、或面板写入失败都不影响使用：助手还有不需要任何插件的直连通道
+- 卸载时一并移除面板插件，但保留你的设置与对话记录
+
+不想安装可以用便携版 `AI修图提示词助手-0.2.0-x64.exe`，免安装直接运行；想用面板通道时再执行一次根目录的 `安装 Photoshop 面板（管理员一次）.cmd`。
 
 ## 能做什么
-
 **两条工作路径，同一套分析流程**
 
 | | 原图精修线 | 参考重构线 |
 | --- | --- | --- |
 | 原图的角色 | 唯一事实来源，必须保留 | 参考与灵感，允许不保留 |
-| 产出 | 中文四段式编辑提示词（保留项 / 修改项 / 禁止项 / 参数） | 英文 Midjourney 提示词 + 参数矩阵 + 提交前 QA 清单 |
+| 产出 | 吻君 V2.0 规则编译的一条完整中文修图 Prompt；可选六方向或九宫格 | 英文 Midjourney 提示词 + 参数矩阵 + 提交前 QA 清单 |
 | 适用 | 商品精修、换背景、局部替换、去除杂物、人像局部修改 | 写真、概念图、海报、风格迁移 |
 
 **六步向导**：接收 → 原图分析 → 方向建议 → 细化 → 生成提示词 → 迭代。
@@ -48,38 +58,38 @@ npm install
 npm run dev
 ```
 
-打开 http://127.0.0.1:5173 ，在「设置」页填入 API Key，点「测试连接」。
+打开 http://127.0.0.1:5173。网页开发模式可调用 API；Gemini 网页桥接需要运行 `npm run desktop`，在「设置」页登录 Gemini 网页。
 
-### 配置 API Key
-
-两种方式，任选一种：
-
-1. 在「设置」页直接填写，程序会写入项目根目录的 `.env`
-2. 复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY=`
-
-Key 只保存在本机，接口不返回明文，也不会进入前端构建产物。
-
-### 默认模型
-
-`deepseek-flash`（DeepSeek-V4.1-Flash），base URL `https://api.deepseek.com`。
-
-该模型支持图片输入、1M 上下文与 JSON Output，用于全流程。程序同时保留通用 OpenAI 兼容配置（自定义 base URL + 模型名），换服务商只需在设置页改两个字段。
-
-设置页还有一个「演示模式」开关：打开后用内置假数据走完整流程，不调用任何模型，适合没有 Key 时试用。
+登录态保存在桌面端独立的本地浏览器会话里，不读取 Google Gemini 客户端的 Cookie。顶部可以一键切换「Gemini 网页 / API」。API 默认 `deepseek-flash`（DeepSeek V4.1 Flash），在设置中填写 API Key；桌面端使用系统加密保存 Key，响应不回显。开发服务支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 环境变量。API 单独计费，不包含在 Gemini Pro 会员中。演示模式不访问任何模型。
 
 ## 工作原理
 
 ### 缓存前缀
 
-请求结构固定为「system = 冻结资产，user = 变动内容」。
+内部请求结构固定为「system = 冻结资产，user = 变动内容」。提交前会把两者编译成一个完整网页提示词。
 
 两条工作流共享同一段前缀，从专属资产处才分叉；前缀由 `src/lib/prefix.ts` 构建，**不接受阶段参数**——这是结构上的保证，因为前缀一旦随阶段变化，上下文缓存就会全部落空。
 
-实测同一段前缀连发，缓存命中占输入的 90% 左右，而未命中的部分正对应每次变化的用户消息。命中与未命中的输入单价相差 50 倍，这条纪律直接决定使用成本。
+### Gemini 接入说明
 
-### 思考模式
+桌面端直接打开 `gemini.google.com`：按底图内容指纹绑定一个网页对话，分析、参考图提取、方向、细化、生成与迭代都复用它。切换模式或重启助手后，再上传相同底图仍会恢复对应对话；文件改名不影响，底图像素内容或编码发生变化则视为新图。同一对话中未变化的附件不重复上传。每轮完整发送 Skill 和当前任务快照，避免已撤回的要求继续生效。第一次使用需在弹出的窗口登录 Google。全程不调用 Gemini API。
 
-DeepSeek 默认开启思考模式且强度为 high，交互式向导会慢到不可用。程序按阶段显式控制：接收、分析、细化、迭代关闭；方向建议与最终组装开启且用低强度。界面上另有一个「深度思考」开关。
+若回复跑偏，点击「对话跑偏，重开」解除当前底图的对话关联，清除模型旧分析与提示词，回到接收步骤重新分析；不删除云端历史，保留本地需求、用户补充与图片。提交中断/超时会标记旧会话为不确定，下次重新建立干净对话。不承诺自动识别所有语义污染；人工输入的未发送草稿会阻止自动提交，避免被覆盖。
+
+两种渠道共用同一条 Skill 编译链：精修线固定携带真人 Cosplay 后期母规则、置景合成专项规则及资产页自定义内容。API 将完整多模态消息直接发到配置的服务；网页模式将相同消息编译为网页文本和附件。发送中禁止修改配置。API Key 与对话映射保存在本机用户数据目录，不打入 EXE。
+
+### 桌面端与 Photoshop
+
+`npm run desktop` 启动桌面端，`npm run desktop:build` 生成 Windows 便携版 EXE 与一键安装包（NSIS，产物在 `release-desktop/`）。
+
+桌面端有两条读取 Photoshop 画布的通道，**都不需要打开 UXP Developer Tools**：
+
+1. **直连通道（默认，零安装）**：走 Photoshop 自带的 COM 自动化，让 Photoshop 自己把当前画布复制一份、打平、缩到长边 1568px 再导出 JPEG 交给助手。只要 Photoshop 在运行就能用，连插件都不用装，原文档不会被改动。
+2. **面板通道（可选，和耀 Link 同款）**：把 `photoshop-plugin/` 复制进 Photoshop 自己的 `Plug-ins` 目录后，Photoshop 每次启动都会自动加载它，面板里能直接看到连接状态。执行根目录的 `安装 Photoshop 面板（管理员一次）.cmd` 即可，只需要一次管理员确认，之后永久生效。
+
+注意区分两个东西：UXP 是 Photoshop 自带的插件运行时，本来就是开着的；平时说的「要打开 UXP」其实是指 UXP **Developer Tools**，那是插件调试工具，只有开发时才需要。装进 `Plug-ins` 目录的插件由 Photoshop 自己在启动时扫描加载，和 UDT 无关——耀 Link 就是这么做的。
+
+面板插件加载后会在后台自动重连，无需保持面板打开。`release-desktop/com.promptwizard.photoshop-link_PS.ccx` 仍然保留，供支持 `.ccx` 的安装器使用；开发调试时也可以用 Adobe UXP Developer Tools 加载 `photoshop-plugin/manifest.json`。
 
 ### 结构化输出
 
@@ -113,7 +123,9 @@ scripts/                   dev 编排、冒烟测试、元素库导出
 | 资产 | 来源 |
 | --- | --- |
 | `analysis-framework.md` | 本项目的原图事实层框架（九个维度） |
-| `refine-four-section.md` | 编辑提示词的模板选择与四段式骨架 |
+| `wenjun-cos-retouch.md` | 真人 Cos 摄影后期的图像主权、任务路由、信息收集与输出契约 |
+| `figure-base-rules.md` | 置入物体、地台、手办台与环境物品专项硬规则 |
+| `refine-four-section.md` | 编辑模板选择与完整 Prompt 的六段内部逻辑 |
 | `figure-base-rules.md` | 新增地台、手办台与环境物品的硬规则 |
 | `recompose-decompose.md` | 人像反向拆解与七层结构拆解 |
 | `mj-params.md` | Midjourney 参数决策与合规边界 |
@@ -126,19 +138,12 @@ scripts/                   dev 编排、冒烟测试、元素库导出
 npm run typecheck      # TypeScript 类型检查
 npm run build          # 生产构建
 npm test               # 单元测试
-npm run smoke          # 冒烟：设置读写、Key 不回显、无 Key 拦截
+npm run smoke          # 冒烟：静态托管、路径防护、网页桥接不可用时明确报错
 npm run check:dev      # 验证 dev 编排与端口回收
+node scripts/check-live-transports.mjs --web --api # 桌面端启动后人工运行，会消耗模型额度，只提交 1px 测试图
 python scripts/export-elements.py          # 重新导出元素库
 python scripts/export-elements.py --check  # 只校验条数一致性
 ```
-
-实盘验证（会真实调用 API 并产生费用，单次约 1 分钱以内）：
-
-```bash
-PW_LIVE_TEST=1 npx vitest run src/lib/llm/cache.live.test.ts
-```
-
-覆盖四条：固定前缀连发三次的缓存命中占比、只改用户消息时前缀是否仍然命中、真实 provider 能否产出结构合法的方向选项并正确记账、精修线能否产出可解析的四段式提示词。
 
 ### 端口
 

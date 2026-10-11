@@ -25,6 +25,7 @@ export function buildRequestBody(opts: ChatOptions): Record<string, unknown> {
     stream: false,
     thinking: { type: opts.thinking },
   }
+  if (opts.conversationId) body.conversationId = opts.conversationId
 
   if (opts.thinking === 'enabled') {
     body.reasoning_effort = opts.effort ?? 'low'

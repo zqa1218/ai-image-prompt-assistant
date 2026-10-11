@@ -1,112 +1,61 @@
-import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const PROJECT_ROOT = path.resolve(here, '..')
 
-/**
- * 数据目录默认是项目根；设置 PROMPT_WIZARD_DATA_DIR 可指向别处，
- * 便于测试时使用临时目录，不污染真实的 .env。
- */
-export const DATA_DIR = process.env.PROMPT_WIZARD_DATA_DIR
-  ? path.resolve(process.env.PROMPT_WIZARD_DATA_DIR)
-  : PROJECT_ROOT
+export const DATA_DIR = process.env.PROMPT_WIZARD_DATA_DIR || path.join(process.env.APPDATA || os.homedir(), 'PromptWizard')
+const settingsPath = path.join(DATA_DIR, 'model-settings.json')
+const defaults = { mode: 'gemini-web', baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com', model: process.env.DEEPSEEK_MODEL || 'deepseek-flash' }
 
-const ENV_PATH = path.join(DATA_DIR, '.env')
-const CONFIG_PATH = path.join(DATA_DIR, '.prompt-wizard.json')
-const ENV_KEY_NAME = 'DEEPSEEK_API_KEY'
-
-export const DEFAULTS = Object.freeze({
-  baseUrl: 'https://api.deepseek.com',
-  model: 'deepseek-flash',
-})
-
-function parseEnv(text) {
-  const out = {}
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) continue
-    const eq = trimmed.indexOf('=')
-    if (eq === -1) continue
-    const key = trimmed.slice(0, eq).trim()
-    let value = trimmed.slice(eq + 1).trim()
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1)
-    }
-    out[key] = value
+export function readSettings() {
+  const stored = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf8')) : {}
+  let apiKey = process.env.DEEPSEEK_API_KEY || ''
+  if (stored.encryptedKey) {
+    const storage = globalThis.promptWizardSafeStorage
+    if (!storage?.isEncryptionAvailable()) throw new Error('无法解密本机 API Key，请使用桌面端重新保存设置')
+    apiKey = storage.decryptString(Buffer.from(stored.encryptedKey, 'base64'))
   }
-  return out
+  return { ...defaults, ...stored, apiKey }
 }
 
-export async function readEnvKey() {
-  if (existsSync(ENV_PATH)) {
-    const parsed = parseEnv(await readFile(ENV_PATH, 'utf8'))
-    if (parsed[ENV_KEY_NAME]) return { key: parsed[ENV_KEY_NAME], source: 'env' }
-  }
-  if (process.env[ENV_KEY_NAME]) {
-    return { key: process.env[ENV_KEY_NAME], source: 'env' }
-  }
-  return { key: null, source: 'none' }
+export function publicSettings(settings = readSettings()) {
+  return { mode: settings.mode, baseUrl: settings.baseUrl, model: settings.model,
+    hasKey: Boolean(settings.apiKey), keySource: settings.encryptedKey ? 'local' : settings.apiKey ? 'env' : 'none' }
 }
 
-export async function writeEnvKey(key) {
-  await mkdir(DATA_DIR, { recursive: true })
-  let lines = []
-  if (existsSync(ENV_PATH)) {
-    lines = (await readFile(ENV_PATH, 'utf8')).split(/\r?\n/)
+export function updateSettings(patch) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('设置必须是 JSON 对象')
+  const next = readSettings()
+  if (patch.mode !== undefined) {
+    if (!['api', 'gemini-web'].includes(patch.mode)) throw new Error('未知运行模式')
+    next.mode = patch.mode
   }
-  let replaced = false
-  const next = lines.map((line) => {
-    if (/^\s*DEEPSEEK_API_KEY\s*=/.test(line)) {
-      replaced = true
-      return `${ENV_KEY_NAME}=${key}`
-    }
-    return line
-  })
-  if (!replaced) {
-    while (next.length && next[next.length - 1].trim() === '') next.pop()
-    next.push(`${ENV_KEY_NAME}=${key}`, '')
+  if (patch.baseUrl !== undefined) {
+    const url = new URL(patch.baseUrl)
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new Error('API 地址必须使用 HTTPS（本机服务除外）')
+    if (url.username || url.password || url.search || url.hash) throw new Error('API 地址不能含密码、查询参数或片段')
+    if (new URL(next.baseUrl).origin !== url.origin && next.apiKey && !patch.apiKey?.trim()) throw new Error('更换 API 服务地址时必须同时填写新服务的 Key，避免把旧 Key 发给其他服务')
+    next.baseUrl = url.href.replace(/\/+$/, '')
   }
-  await writeFile(ENV_PATH, next.join('\n'), 'utf8')
-}
-
-export async function readConfig() {
-  if (!existsSync(CONFIG_PATH)) return { ...DEFAULTS }
-  try {
-    const parsed = JSON.parse(await readFile(CONFIG_PATH, 'utf8'))
-    return {
-      baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : DEFAULTS.baseUrl,
-      model: typeof parsed.model === 'string' ? parsed.model : DEFAULTS.model,
-    }
-  } catch {
-    return { ...DEFAULTS }
+  if (patch.model !== undefined) {
+    if (typeof patch.model !== 'string' || !patch.model.trim() || patch.model.length > 200) throw new Error('请输入有效的模型 ID')
+    next.model = patch.model.trim()
   }
-}
-
-export async function writeConfig(patch) {
-  await mkdir(DATA_DIR, { recursive: true })
-  const current = await readConfig()
-  const next = {
-    baseUrl: patch.baseUrl?.trim() || current.baseUrl,
-    model: patch.model?.trim() || current.model,
+  if (patch.apiKey !== undefined) {
+    if (typeof patch.apiKey !== 'string' || patch.apiKey.length > 4096) throw new Error('API Key 格式无效')
+    const key = patch.apiKey.trim()
+    if (key) {
+      const storage = globalThis.promptWizardSafeStorage
+      if (!storage?.isEncryptionAvailable()) throw new Error('请在桌面端保存 API Key；开发服务可使用 DEEPSEEK_API_KEY 环境变量')
+      next.encryptedKey = storage.encryptString(key).toString('base64')
+    } else delete next.encryptedKey
   }
-  await writeFile(CONFIG_PATH, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
-  return next
-}
-
-/** 面向接口返回的设置快照 —— 永不包含 key 明文。 */
-export async function resolveSettings() {
-  const [config, key] = await Promise.all([readConfig(), readEnvKey()])
-  return {
-    baseUrl: config.baseUrl,
-    model: config.model,
-    hasKey: Boolean(key.key),
-    keySource: key.source,
-    apiKey: key.key,
-  }
+  delete next.apiKey
+  mkdirSync(DATA_DIR, { recursive: true })
+  writeFileSync(`${settingsPath}.tmp`, JSON.stringify(next, null, 2), { mode: 0o600 })
+  renameSync(`${settingsPath}.tmp`, settingsPath)
+  return publicSettings()
 }

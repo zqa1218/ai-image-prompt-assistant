@@ -1,4 +1,5 @@
 import ImageDropzone from '../components/ImageDropzone.tsx'
+import PhotoshopImportButton from '../components/PhotoshopImportButton.tsx'
 import type { ResolvedDirective } from '../lib/directives.ts'
 import { visibleFields } from '../lib/fields.ts'
 import { formatBytes, mimeOf } from '../lib/image.ts'
@@ -46,11 +47,14 @@ export default function IntakeStage({
             onRemove={() => onOriginal(null)}
           />
         ) : (
-          <ImageDropzone
-            label="点击选择原图"
-            hint="支持 JPEG / PNG / WebP / GIF；其它格式会自动转成 JPEG 后上传，全程在本机处理"
-            onPick={onOriginal}
-          />
+          <div className="space-y-2">
+            <ImageDropzone
+              label="点击选择原图"
+              hint="支持 JPEG / PNG / WebP / GIF；其它格式会自动转成 JPEG 后上传，全程在本机处理"
+              onPick={onOriginal}
+            />
+            <PhotoshopImportButton role="original" onPick={onOriginal} />
+          </div>
         )}
       </section>
 
@@ -58,7 +62,7 @@ export default function IntakeStage({
         <h2 className="text-sm font-semibold">
           参考图
           <span className="ml-2 text-xs font-normal text-neutral-400">
-            可选 · 需要把参考图里的物体置入原图时使用
+            可选 · 可作为人设、发型、服装、物体、材质、特效、背景或光线参考
           </span>
         </h2>
         {references.length > 0 && (
@@ -78,9 +82,10 @@ export default function IntakeStage({
           compact
           multiple
           label={references.length > 0 ? '继续添加参考图' : '点击添加参考图（可多张）'}
-          hint="按添加顺序编号为「参考图1」「参考图2」"
+          hint="按添加顺序编号为 REFERENCE_1、REFERENCE_2；具体职责在下方选择"
           onPick={onAddReference}
         />
+        <PhotoshopImportButton role="reference" onPick={onAddReference} />
       </section>
 
       <section className="space-y-4">

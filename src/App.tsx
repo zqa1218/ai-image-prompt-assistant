@@ -3,6 +3,7 @@ import AssetsPage from './pages/AssetsPage.tsx'
 import SettingsPage from './pages/SettingsPage.tsx'
 import WizardPage from './pages/WizardPage.tsx'
 import { applyProviderMode, useProviderMode } from './lib/providerMode.ts'
+import TransportSwitch from './components/TransportSwitch.tsx'
 
 type Tab = 'wizard' | 'assets' | 'settings'
 
@@ -31,6 +32,7 @@ export default function App() {
             </TabButton>
           </nav>
         </div>
+        <TransportSwitch openSettings={() => setTab('settings')} />
       </header>
 
       <main className="mx-auto max-w-3xl px-6 py-8">

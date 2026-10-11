@@ -92,10 +92,15 @@ describe('需求与规则拼装', () => {
   })
 
   it('迭代阶段会把本轮修改重点写进去，并限定只改这一处', () => {
-    const task = buildStageTask(baseInput({ focus: '把禁止项里的塑料感换成蜡质感' }))
+    const task = buildStageTask(baseInput({
+      focus: '修正发色偏红',
+      artifact: { prompt: '上一版完整提示词', channel: 'Gemini' },
+    }))
+    expect(task).toContain('## 上一版完整提示词（仅用于定点修正）')
+    expect(task).toContain('上一版完整提示词')
     expect(task).toContain('## 本轮修改重点（只改这一处）')
-    expect(task).toContain('把禁止项里的塑料感换成蜡质感')
-    expect(task).toContain('其余内容必须与上一版保持一致')
+    expect(task).toContain('修正发色偏红')
+    expect(task).toContain('不依赖历史上下文的完整提示词')
   })
 })
 
@@ -107,11 +112,26 @@ describe('输出要求', () => {
     }
   })
 
-  it('精修线的生成阶段要求用四个中文标记分段', () => {
+  it('精修线的生成阶段要求输出一条独立完整中文 Prompt', () => {
     const task = buildStageTask(baseInput({ stage: stage('compose') }))
-    for (const marker of ['【保留项】', '【修改项】', '【禁止项】', '【参数】']) {
-      expect(task).toContain(marker)
-    }
+    expect(task).toContain('一条独立、连续、可直接复制的中文修图 Prompt')
+    expect(task).toContain('不加标题、编号、代码围栏')
+    expect(task).not.toContain('【保留项】')
+  })
+
+  it('六方向和九宫格交付形式会改变输出要求', () => {
+    const six = buildStageTask(baseInput({
+      stage: stage('direction'),
+      intake: { requirement: '置景', outputMode: '6 个差异化方向' },
+    }))
+    expect(six).toContain('输出 6~6 个差异化方向')
+
+    const grid = buildStageTask(baseInput({
+      stage: stage('compose'),
+      intake: { requirement: '策划', outputMode: '9 宫格方案' },
+    }))
+    expect(grid).toContain('共同母规则')
+    expect(grid).toContain('九格九动作')
   })
 
   it('分析阶段要求只写事实、不给建议', () => {

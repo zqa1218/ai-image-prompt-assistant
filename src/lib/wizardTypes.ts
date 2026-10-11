@@ -53,7 +53,7 @@ export type ReferenceItem = {
 }
 
 export type Artifact = {
-  /** 最终提示词正文（A 线是中文四段式，B 线是英文 MJ 提示词） */
+  /** 最终提示词正文（A 线是完整中文修图 Prompt，B 线是英文 MJ 提示词） */
   prompt: string
   /** 「喂给谁」或提交方式 */
   channel: string

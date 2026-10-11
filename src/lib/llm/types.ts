@@ -20,6 +20,7 @@ export type LlmMessage = {
 export type ThinkingMode = 'disabled' | 'enabled'
 
 export type ChatOptions = {
+  conversationId?: string
   messages: LlmMessage[]
   /** 思考模式：默认关闭，只有方向建议与最终组装才开 */
   thinking: ThinkingMode

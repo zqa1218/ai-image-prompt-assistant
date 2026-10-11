@@ -1,0 +1,63 @@
+import { app, BrowserWindow, shell, safeStorage } from 'electron'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { GeminiWebController } from './gemini-web.mjs'
+import { installPhotoshopPlugin } from './photoshop-plugin.mjs'
+
+const here = path.dirname(fileURLToPath(import.meta.url))
+const port = 8787
+
+app.setName('AI修图提示词助手')
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  let window = null
+
+  app.on('second-instance', () => {
+    if (!window) return
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+  })
+
+  app.whenReady().then(async () => {
+    process.env.PW_WEB_PORT = String(port)
+    process.env.PROMPT_WIZARD_DATA_DIR = app.getPath('userData')
+    process.env.PROMPT_WIZARD_BRIDGE_DIR = path.join(app.getPath('appData'), 'PromptWizard')
+
+    const icon = path.join(here, '..', 'assets', 'icon.ico')
+    globalThis.promptWizardSafeStorage = safeStorage
+    globalThis.promptWizardGeminiWeb = new GeminiWebController({ icon, dataDir: app.getPath('userData') })
+
+    try {
+      const pluginPath = await installPhotoshopPlugin({ app, projectRoot: path.join(here, '..') })
+      console.log(`[prompt-wizard] Photoshop Link 已同步：${pluginPath}`)
+    } catch (error) {
+      console.error('[prompt-wizard] Photoshop Link 自动同步失败：', error)
+    }
+
+    const serverUrl = pathToFileURL(path.join(here, '..', 'server', 'index.mjs')).href
+    const { ready } = await import(serverUrl)
+    await ready
+
+    window = new BrowserWindow({
+      width: 1100,
+      height: 820,
+      minWidth: 760,
+      minHeight: 620,
+      title: 'AI修图提示词助手',
+      icon,
+      webPreferences: { contextIsolation: true, sandbox: true },
+    })
+    window.removeMenu()
+    window.webContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith('https://')) void shell.openExternal(url)
+      return { action: 'deny' }
+    })
+    await window.loadURL(`http://127.0.0.1:${port}`)
+    window.on('closed', () => { window = null })
+  })
+
+  app.on('window-all-closed', () => app.quit())
+}

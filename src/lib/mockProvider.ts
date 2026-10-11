@@ -2,7 +2,7 @@ import type { Artifact, DirectionOption, Provider, ReferenceItem } from './wizar
 
 /**
  * 演示模式的假数据提供方：不联网也能把六步流程完整走通。
- * M3 会换成真实 DeepSeek 调用，接口契约保持不变。
+ * 真实模式会提交到已登录的 Gemini 网页，演示模式保持同一接口契约。
  */
 const DELAY = 450
 
@@ -53,17 +53,38 @@ const REFINE_OPTIONS: DirectionOption[] = [
     channel: 'Codex imagegen / GPT Image 2 编辑',
     recommended: false,
   },
+  {
+    id: 'refine-natural',
+    title: '自然材质：保留现场痕迹',
+    change: '保留现有构图，强化真实材料的粗糙度、边缘磨损与接触关系',
+    outcome: '材质更可信，仍能看出原始摄影环境与使用痕迹',
+    risk: '对光线和结构的改动较弱，视觉冲击有限',
+    channel: 'Gemini / Nano Banana 图像编辑',
+    recommended: false,
+  },
+  {
+    id: 'refine-display',
+    title: '展陈结构：增加低矮层次',
+    change: '在不遮挡主体的前中景增加低矮实体结构，补真实落点、边界与投影',
+    outcome: '画面层次增加，主体仍保持唯一视觉中心',
+    risk: '原图空间不足时容易显得拥挤或出现错误透视',
+    channel: 'Gemini / Nano Banana 图像编辑',
+    recommended: false,
+  },
+  {
+    id: 'refine-atmosphere',
+    title: '摄影统一：控制色彩与颗粒',
+    change: '只统一白平衡、局部反差、颗粒与景深过渡，不新增大型物体',
+    outcome: '合成痕迹降低，新增内容与底图的摄影语言更一致',
+    risk: '不会解决结构本身错误，需要先确认几何和接触关系正确',
+    channel: 'Gemini / Nano Banana 图像编辑',
+    recommended: false,
+  },
 ]
 
 const REFINE_ARTIFACT: Artifact = {
-  prompt: `【保留项】严格保持 REFERENCE_0 中马克杯的形态、杯口弧度、把手位置、身体比例、釉面瑕疵与整体构图、镜头位置、画面比例、原始背景与光照方向不变。不得改变杯体轮廓与杯壁厚度。
-
-【修改项】在杯体与桌面接触区域增强真实感：收窄杯沿高光宽度约三成，使其集中在杯口左上弧段；加深杯底接触阴影半档并保持向右下延伸的自然衰减；提高桌面木纹在中景处的清晰度，同时保留景深造成的边缘虚化；将整体白平衡向中性收约 200K，去掉冷调偏色。所有改动必须沿用原图自左上 45° 的柔光方向，不得引入第二光源。
-
-【禁止项】不要出现随机文字、乱码、水印、Logo、重复复制杯体、悬浮、穿模、错误透视、过度锐化、塑料感；不要把釉面处理成镜面反射；不要改变杯底与桌面的接触点位置。
-
-【参数】输出比例 3:4，数量 1，编辑强度 低。`,
-  channel: '喂给 Codex imagegen 或 GPT Image 2 的编辑接口，把原图作为 REFERENCE_0 一并传入',
+  prompt: `以 REFERENCE_0 为唯一摄影底图，严格保持马克杯的杯体轮廓、杯口弧度、把手位置、釉面瑕疵、整体构图、镜头位置、画面比例、原始背景与自左上 45° 入射的柔光方向不变。在杯体与桌面接触区域增强真实感：将杯沿高光宽度收窄约三成并集中在杯口左上弧段，加深杯底接触阴影半档且保持向右下自然衰减，提高中景桌面木纹清晰度并保留景深造成的边缘虚化，将整体白平衡向中性收约 200K。输出比例 3:4，数量 1，编辑强度低。不要引入第二光源，不要出现随机文字、乱码、水印、Logo、重复杯体、悬浮、穿模、错误透视、过度锐化或塑料感，不要把釉面改成镜面反射，不要改变杯底落点。`,
+  channel: '提交给 Gemini / Nano Banana：底图 = REFERENCE_0，参考图按上传顺序 = REFERENCE_1...N',
   params: ['比例 3:4', '数量 1', '编辑强度 低'],
 }
 
@@ -167,7 +188,9 @@ export const mockProvider: Provider = {
 
   async suggestDirections(ctx) {
     const options = ctx.workflow.id === 'refine' ? REFINE_OPTIONS : RECOMPOSE_OPTIONS
-    const limit = ctx.workflow.stages.find((s) => s.id === 'direction')?.maxOptions
+    const limit = ctx.intake.outputMode?.includes('6 个差异化方向')
+      ? 6
+      : ctx.workflow.stages.find((s) => s.id === 'direction')?.maxOptions
     return wait(limit ? options.slice(0, limit) : options, 700)
   },
 

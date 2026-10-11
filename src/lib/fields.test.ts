@@ -18,14 +18,15 @@ describe('条件字段可见性', () => {
     expect(shown).not.toContain('placementHorizontal')
     expect(shown).not.toContain('placementDistance')
     expect(shown).not.toContain('interaction')
-    expect(shown).not.toContain('referenceRole')
+    expect(shown).not.toContain('placementMode')
+    expect(shown).toContain('referenceRole')
   })
 
-  it('勾了置入物体后，五个放置问题一起出现', () => {
+  it('勾了置入物体后，五个放置问题和模式一起出现', () => {
     const shown = keys({ taskType: '置入物体' })
     expect(shown).toEqual(
       expect.arrayContaining([
-        'referenceRole',
+        'placementMode',
         'placementLayer',
         'placementHorizontal',
         'placementDistance',
@@ -50,5 +51,10 @@ describe('条件字段可见性', () => {
   it('不完全匹配的值不会误触发', () => {
     expect(keys({ taskType: '置入' })).not.toContain('placementLayer')
     expect(keys({ taskType: '置入物体X' })).not.toContain('placementLayer')
+  })
+
+  it('VFX 任务才显示发生源与运动方向', () => {
+    expect(keys({ taskType: '头发精修' })).not.toContain('effectSource')
+    expect(keys({ taskType: '粒子 / 体积雾 VFX' })).toContain('effectSource')
   })
 })

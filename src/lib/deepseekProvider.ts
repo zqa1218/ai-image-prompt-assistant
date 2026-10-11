@@ -1,6 +1,8 @@
 import type { WorkflowStage } from '../workflows/types.ts'
 import { effectiveAssets, useAssetStore } from './assetStore.ts'
 import { resolveDirectives } from './directives.ts'
+import { buildGeminiContent } from './geminiConversation.ts'
+import { imageConversationId } from './imageConversation.ts'
 import { assertSupportedImages, assertWithinLimit } from './image.ts'
 import { chat, chatJson, LlmError } from './llm/client.ts'
 import {
@@ -46,14 +48,14 @@ function thinkingOf(stage: WorkflowStage): ThinkingOptions {
  * 图片按阶段分化：
  * - 原图分析只看原图，参考图会干扰对原图事实层的判断
  * - 生成提示词要同时看原图和参考图，否则不知道要置入的物体长什么样
- * - 其余阶段的提示词里已有分析结论，再传图只会白烧 token
+ * - 后续阶段携带原始图片，切换 API 或重开网页对话时仍有完整依据
  */
 function imagesFor(ctx: WizardContext, stageId: string): WizardImage[] {
   if (stageId === 'analyze') {
     return ctx.images.filter((image) => image.role === 'original')
   }
   if (stageId === 'compose') return ctx.images
-  return []
+  return ctx.images
 }
 
 function assertImagesReady(images: WizardImage[]): void {
@@ -73,13 +75,7 @@ function messagesFor(
   const assets = effectiveAssets(useAssetStore.getState().overrides)
   const prefix = buildPrefix(ctx.workflow, assets)
 
-  const parts: ContentPart[] = [{ type: 'text', text: task }]
-  for (const image of images) {
-    parts.push({
-      type: 'image_url',
-      image_url: { url: image.dataUrl, detail: 'high' },
-    })
-  }
+  const parts: ContentPart[] = buildGeminiContent(task, images)
 
   return [
     { role: 'system', content: prefix },
@@ -170,7 +166,7 @@ function degradedDirection(result: { raw: string; reason: string }): DirectionOp
 function fallbackChannel(ctx: WizardContext): string {
   return ctx.workflow.outputContract === 'mj-prompt-en'
     ? 'Midjourney 官网或 Discord，由你本人手动提交（程序不代为提交）'
-    : '喂给 Codex imagegen 或 GPT Image 2 的编辑接口，把原图作为 REFERENCE_0 一并传入'
+    : '喂给 Gemini / Nano Banana 的图像编辑对话，把底图作为 REFERENCE_0，参考图按 REFERENCE_1...N 同步传入'
 }
 
 async function composeArtifact(ctx: WizardContext, focus?: string): Promise<Artifact> {
@@ -179,6 +175,7 @@ async function composeArtifact(ctx: WizardContext, focus?: string): Promise<Arti
 
   const result = await chatJson(
     {
+      conversationId: await imageConversationId(ctx.images.find((image) => image.role === 'original')),
       messages: messagesForStage(ctx, 'compose', focus),
       ...thinkingOf(stage),
       maxTokens: 4096,
@@ -209,6 +206,7 @@ export const deepseekProvider: Provider = {
     assertImagesReady(imagesFor(ctx, 'analyze'))
 
     const result = await chat({
+      conversationId: await imageConversationId(ctx.images.find((image) => image.role === 'original')),
       messages: messagesForStage(ctx, 'analyze'),
       ...thinkingOf(stage),
       temperature: TEMPERATURE,
@@ -245,6 +243,7 @@ export const deepseekProvider: Provider = {
 
     const result = await chatJson(
       {
+        conversationId: await imageConversationId(ctx.images.find((image) => image.role === 'original')),
         messages: messagesFor(ctx, references, task),
         ...thinkingOf(stage),
         maxTokens: 3072,
@@ -259,6 +258,7 @@ export const deepseekProvider: Provider = {
     const stage = stageOf(ctx, 'direction')
     const result = await chatJson(
       {
+        conversationId: await imageConversationId(ctx.images.find((image) => image.role === 'original')),
         messages: messagesForStage(ctx, 'direction'),
         ...thinkingOf(stage),
         // 三条选项各含五个字段，2048 偏紧，截断会直接导致 JSON 解析失败
@@ -277,6 +277,7 @@ export const deepseekProvider: Provider = {
     // 用户这条输入已经写进 ctx.notes，会作为「用户补充要求」进入请求，
     // 这里不再单独拼一次，避免同一句话在提示词里出现两遍。
     const result = await chat({
+      conversationId: await imageConversationId(ctx.images.find((image) => image.role === 'original')),
       messages: messagesForStage(ctx, 'detail'),
       ...thinkingOf(stage),
       temperature: TEMPERATURE,

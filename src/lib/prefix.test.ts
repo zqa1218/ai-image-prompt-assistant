@@ -62,4 +62,11 @@ describe('缓存前缀', () => {
     delete incomplete['figure-base-rules']
     expect(() => buildPrefix(REFINE, incomplete)).toThrow(/figure-base-rules/)
   })
+
+  it('精修线固定加载真人 Cos 母规则与置景专项 Skill', () => {
+    const prefix = buildPrefix(REFINE, DEFAULT_ASSETS)
+    expect(prefix).toContain('真人 Cosplay 摄影后期 Prompt 编译母规则')
+    expect(prefix).toContain('仅环境物品')
+    expect(prefix).toContain('最终交付是一条独立、连续、可直接复制')
+  })
 })

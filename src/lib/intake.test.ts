@@ -59,6 +59,18 @@ describe('条件指令', () => {
     ])
   })
 
+  it('置入物体选择仅环境物品时追加禁止改造环境的硬约束', () => {
+    const resolved = resolveDirectives(REFINE, {
+      taskType: '置入物体',
+      placementMode: '仅环境物品',
+    })
+    expect(resolved.map((d) => d.label)).toEqual([
+      '地台与环境物品专项',
+      '仅环境物品模式',
+    ])
+    expect(resolved[1].instruction).toContain('不新增地台、平台、地面替换')
+  })
+
   it('单选字段同样能触发指令（参考图职责）', () => {
     const resolved = resolveDirectives(RECOMPOSE, { referenceRole: '保持同一位人物' })
     expect(resolved.map((d) => d.label)).toEqual(['人物一致性'])
@@ -71,5 +83,6 @@ describe('条件指令', () => {
     resolveDirectives(REFINE, { taskType: '置入物体,生成场景,增加特效' })
     expect(REFINE.assets).toEqual(before)
     expect(REFINE.assets).toContain('figure-base-rules')
+    expect(REFINE.assets).toContain('wenjun-cos-retouch')
   })
 })

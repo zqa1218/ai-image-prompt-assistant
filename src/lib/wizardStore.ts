@@ -56,6 +56,7 @@ export type WizardState = {
 
   start: (workflowId: string) => void
   reset: () => void
+  restartModelContext: () => void
   setIntake: (key: string, value: string) => void
   setOriginal: (image: ImageRef | null) => void
   addReference: (image: ImageRef) => void
@@ -259,6 +260,12 @@ export const useWizard = create<WizardState>()((set, get) => {
       set({ ...initial })
     },
 
+    restartModelContext() {
+      set({ stageIndex: 0, records: {}, options: [], selectedOptionId: null, artifact: null,
+        referenceItems: [], selectedReferenceItems: [], messages: [],
+        notice: '已清除模型旧结论；保留底图、参考图、需求与用户补充，请继续重新分析。' })
+    },
+
     setIntake(key, value) {
       const state = get()
       const { records, patch } = invalidateAfter(state, 0)
@@ -366,7 +373,7 @@ export const useWizard = create<WizardState>()((set, get) => {
       const message: ChatMessage = { id: createId('m'), role: 'user', text: trimmed }
       set((s) => ({ notes: [...s.notes, trimmed], messages: [...s.messages, message], busy: true }))
       try {
-        const reply = await provider.askDetail(ctx, trimmed)
+        const reply = await provider.askDetail({ ...ctx, notes: [...ctx.notes, trimmed] }, trimmed)
         set((s) => ({
           busy: false,
           messages: [

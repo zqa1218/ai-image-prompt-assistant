@@ -246,7 +246,11 @@ function WorkflowPicker({ onPick }: { onPick: (id: string) => void }) {
             </p>
             <p className="mt-3 text-[11px] text-neutral-400 dark:text-neutral-500">
               {workflow.stages.length} 个阶段 · 输出
-              {workflow.outputContract === 'four-section-cn' ? '中文四段式' : '英文 MJ 提示词'}
+              {workflow.outputContract === 'mj-prompt-en'
+                ? '英文 MJ 提示词'
+                : workflow.outputContract === 'complete-cn'
+                  ? '完整中文修图 Prompt'
+                  : '中文四段式'}
             </p>
           </button>
         ))}

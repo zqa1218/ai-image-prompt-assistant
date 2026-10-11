@@ -36,14 +36,14 @@ const stageSchema = z.object({
   fields: z.array(fieldSchema).optional(),
   minOptions: z.number().int().positive().optional(),
   maxOptions: z.number().int().positive().optional(),
-  outputContract: z.enum(['four-section-cn', 'mj-prompt-en']).optional(),
+  outputContract: z.enum(['complete-cn', 'four-section-cn', 'mj-prompt-en']).optional(),
 })
 
 const workflowSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   summary: z.string().min(1),
-  outputContract: z.enum(['four-section-cn', 'mj-prompt-en']),
+  outputContract: z.enum(['complete-cn', 'four-section-cn', 'mj-prompt-en']),
   sharedAssets: z.array(z.string().min(1)),
   assets: z.array(z.string().min(1)),
   directives: z.array(directiveSchema).optional(),

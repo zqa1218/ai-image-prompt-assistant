@@ -44,7 +44,7 @@ export type WorkflowStage = {
   outputContract?: OutputContract
 }
 
-export type OutputContract = 'four-section-cn' | 'mj-prompt-en'
+export type OutputContract = 'complete-cn' | 'four-section-cn' | 'mj-prompt-en'
 
 export type Workflow = {
   id: string

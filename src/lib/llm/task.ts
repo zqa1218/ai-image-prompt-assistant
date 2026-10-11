@@ -32,6 +32,11 @@ const FIELD_LABELS: Record<string, string> = {
   spec: '输出规格',
   constraints: '约束',
   referenceRole: '参考图职责',
+  editRegion: '编辑区域',
+  preserve: '保持不变',
+  placementMode: '置景模式',
+  effectSource: '特效发生源/方向',
+  outputMode: '交付形式',
 }
 
 /** 只把多选值里的逗号换成顿号，便于模型阅读。 */
@@ -62,7 +67,7 @@ export function buildStageTask(input: TaskInput): string {
 
   blocks.push(
     `## 工作流\n${workflow.name}：${workflow.summary}\n` +
-      `输出契约：${workflow.outputContract === 'four-section-cn' ? '中文四段式编辑提示词' : '英文 Midjourney 提示词 + 参数矩阵'}`,
+      `输出契约：${workflow.outputContract === 'mj-prompt-en' ? '英文 Midjourney 提示词 + 参数矩阵' : workflow.outputContract === 'complete-cn' ? '独立完整的中文修图 Prompt' : '中文四段式编辑提示词'}`,
   )
 
   // 表单字段只声明在接收阶段，其它阶段没有 fields。
@@ -132,18 +137,22 @@ export function buildStageTask(input: TaskInput): string {
   }
 
   if (input.focus) {
+    if (input.artifact?.prompt.trim()) {
+      blocks.push(`## 上一版完整提示词（仅用于定点修正）\n${input.artifact.prompt.trim()}`)
+    }
     blocks.push(
       `## 本轮修改重点（只改这一处）\n${input.focus}\n` +
-        `除这一处之外，其余内容必须与上一版保持一致。`,
+        `除这一处之外，其余已确认内容保持一致；最终仍要重写为一条不依赖历史上下文的完整提示词。`,
     )
   }
 
-  blocks.push(`## 输出要求\n${outputRequirement(stage, workflow)}`)
+  blocks.push(`## 输出要求\n${outputRequirement(input)}`)
 
   return blocks.join('\n\n')
 }
 
-function outputRequirement(stage: WorkflowStage, workflow: Workflow): string {
+function outputRequirement(input: TaskInput): string {
+  const { stage, workflow } = input
   if (stage.id === 'analyze') {
     return (
       '按 analysis-framework 资产的九个维度逐项输出，每项一到三句，' +
@@ -153,8 +162,9 @@ function outputRequirement(stage: WorkflowStage, workflow: Workflow): string {
   }
 
   if (stage.id === 'direction') {
-    const min = stage.minOptions ?? 2
-    const max = stage.maxOptions ?? 3
+    const wantsSix = input.intake.outputMode?.includes('6 个差异化方向')
+    const min = wantsSix ? 6 : (stage.minOptions ?? 2)
+    const max = wantsSix ? 6 : (stage.maxOptions ?? 3)
     return (
       `输出 ${min}~${max} 个差异化方向。只输出一个 json 对象，结构如下：\n` +
       '{"options":[{"title":"方向标题","change":"改什么、保留什么",' +
@@ -168,21 +178,36 @@ function outputRequirement(stage: WorkflowStage, workflow: Workflow): string {
     const extra =
       workflow.outputContract === 'mj-prompt-en'
         ? '（1）中文方向说明（2）英文 Midjourney 提示词（3）参数矩阵清单（4）提交前 QA 清单'
-        : '（1）中文四段式提示词（2）一行「喂给谁」建议'
+        : workflow.outputContract === 'complete-cn'
+          ? '（1）一条独立、连续、可直接复制的中文修图 Prompt（2）一行「喂给谁」建议'
+          : '（1）中文四段式提示词（2）一行「喂给谁」建议'
     const markerNote =
       workflow.outputContract === 'four-section-cn'
         ? 'prompt 字段必须用四个中文标记分段：【保留项】【修改项】【禁止项】【参数】，' +
-          '每个标记单独起一行，标记之间不要再夹别的小标题。'
-        : ''
+          '每个标记单独起一行，标记之间不要再夹别的小标题。' +
+          '这段 prompt 的直接读者是 Gemini / Nano Banana：必须用 REFERENCE_0 指代底图，' +
+          '用 REFERENCE_1...N 指代对应参考图，并在【修改项】逐张说明只借用什么。'
+        : workflow.outputContract === 'complete-cn'
+          ? 'prompt 字段内部只放一条完整自然语言 Prompt，不加标题、编号、代码围栏、规则解释或分析过程。' +
+            '按范围声明、锁定项、具体修改、几何材质与空间关系、摄影融合、最高相关禁止项的顺序自然串联。' +
+            '必须用 REFERENCE_0 指代底图，并用 REFERENCE_1...N 精确声明每张参考图只负责什么。'
+          : ''
     const paramNote =
       workflow.outputContract === 'mj-prompt-en'
         ? 'params 至少覆盖 --ar 与风格化强度；checklist 给出提交前要确认的条目。'
-        : 'params 可放本次的输出比例、数量与编辑强度。'
+        : 'params 只放本次已有的输出比例、数量与编辑强度；没有明确值时可省略。'
+    const requestedFormat = input.intake.outputMode ?? ''
+    const wantsGrid = requestedFormat.includes('9 宫格方案') || input.intake.taskType?.includes('九宫格策划')
+    const formatNote = requestedFormat.includes('6 个差异化方向')
+      ? '用户要求六个方向：prompt 先写一个共同母规则，再给六个在结构、尺度、材质或空间关系上至少两项不同的方向。'
+      : wantsGrid
+        ? '用户要求九宫格：prompt 先写共同母规则，再写九格差异；若是九格九环境，锁定同一人物、动作、机位、裁切与光影；只有用户明确选择九格九动作时才允许动作和机位变化。'
+        : ''
     return (
       `只输出一个 json 对象，结构如下：\n` +
       '{"prompt":"最终提示词正文","channel":"喂给谁或如何提交","params":["参数行"],"checklist":["提交前检查项"]}\n' +
       `prompt 字段里要能直接看到：${extra}。` +
-      `${markerNote}${paramNote} 不要输出 json 之外的任何文字。`
+      `${markerNote}${formatNote}${paramNote} 不要输出 json 之外的任何文字。`
     )
   }
 

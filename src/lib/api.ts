@@ -1,8 +1,9 @@
 export type SettingsResponse = {
+  mode: 'gemini-web' | 'api'
   baseUrl: string
   model: string
   hasKey: boolean
-  keySource: 'env' | 'none'
+  keySource: 'env' | 'local' | 'none'
 }
 
 export type ModelInfo = {
@@ -64,6 +65,7 @@ export function getSettings(): Promise<SettingsResponse> {
 }
 
 export function saveSettings(patch: {
+  mode?: 'gemini-web' | 'api'
   baseUrl?: string
   model?: string
   apiKey?: string
@@ -74,6 +76,61 @@ export function saveSettings(patch: {
   })
 }
 
+export function resetGeminiConversation(conversationId: string): Promise<{ ok: boolean }> {
+  return request('/api/gemini/reset', { method: 'POST', body: JSON.stringify({ conversationId }) })
+}
+
 export function listModels(): Promise<{ models: ModelInfo[] }> {
   return request<{ models: ModelInfo[] }>('/api/models')
+}
+
+export type GeminiWebStatus = {
+  connected: boolean
+  account?: string
+  detail?: string
+}
+
+export function getGeminiStatus(): Promise<GeminiWebStatus> {
+  return request<GeminiWebStatus>('/api/gemini/status')
+}
+
+export function openGeminiLogin(email: string): Promise<GeminiWebStatus> {
+  return request<GeminiWebStatus>('/api/gemini/open', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+/** uxp = 装了 PS 面板插件；com = 直接走 Photoshop 自带的 COM 自动化。 */
+export type PhotoshopStatus = {
+  connected: boolean
+  mode: 'uxp' | 'com' | 'none'
+  detail?: string
+}
+
+export type PhotoshopDocument = {
+  index: number
+  name: string
+  width: number
+  height: number
+  isActive?: boolean
+  layers?: number
+}
+
+export function getPhotoshopStatus(): Promise<PhotoshopStatus> {
+  return request<PhotoshopStatus>('/api/photoshop/status')
+}
+
+export function getPhotoshopDocuments(): Promise<{ documents: PhotoshopDocument[] }> {
+  return request<{ documents: PhotoshopDocument[] }>('/api/photoshop/documents')
+}
+
+export function capturePhotoshopImage(role: 'original' | 'reference', index = -1) {
+  return request<{
+    image: import('./wizardTypes.ts').ImageRef
+    source: 'uxp' | 'com'
+  }>('/api/photoshop/capture', {
+    method: 'POST',
+    body: JSON.stringify({ role, index }),
+  })
 }

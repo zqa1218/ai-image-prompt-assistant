@@ -21,6 +21,25 @@ beforeEach(() => {
 })
 
 describe('六步状态机', () => {
+  it('重开污染会话时保留原始用户输入，清除模型衍生结论', () => {
+    api().start('refine')
+    fillIntake('只改岩石')
+    useWizard.setState({ notes: ['人物不变'], artifact: { prompt: '污染内容', channel: 'test' }, records: { analyze: { status: 'ready', output: '旧分析' } }, stageIndex: 4 })
+    api().restartModelContext()
+    expect(api().original).not.toBeNull()
+    expect(api().intake.requirement).toBe('只改岩石')
+    expect(api().notes).toEqual(['人物不变'])
+    expect(api().records).toEqual({})
+    expect(api().artifact).toBeNull()
+    expect(api().stageIndex).toBe(0)
+  })
+  it('细化请求带上本次刚输入的补充要求', async () => {
+    let receivedNotes: string[] = []
+    setProvider({ ...MOCK_PROVIDER, async askDetail(ctx) { receivedNotes = ctx.notes; return '收到' } })
+    api().start('refine')
+    await api().addNote('只修改人物右侧的岩石')
+    expect(receivedNotes).toContain('只修改人物右侧的岩石')
+  })
   it('原图精修线：不接模型也能从第 0 步走到第 5 步', async () => {
     api().start('refine')
     fillIntake()
@@ -42,8 +61,8 @@ describe('六步状态机', () => {
 
     await api().advance()
     expect(api().stageIndex).toBe(4)
-    expect(api().artifact?.prompt).toContain('【保留项】')
-    expect(api().artifact?.prompt).toContain('【禁止项】')
+    expect(api().artifact?.prompt).toContain('REFERENCE_0')
+    expect(api().artifact?.prompt).toContain('不要')
 
     await api().advance()
     expect(api().stageIndex).toBe(5)

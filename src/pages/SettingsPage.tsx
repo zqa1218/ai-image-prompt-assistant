@@ -1,71 +1,49 @@
 import { useCallback, useEffect, useState } from 'react'
-import {
-  ApiError,
-  getSettings,
-  listModels,
-  saveSettings,
-  type ModelInfo,
-} from '../lib/api.ts'
+import { getGeminiStatus, openGeminiLogin, type GeminiWebStatus } from '../lib/api.ts'
 import { useProviderMode } from '../lib/providerMode.ts'
+import { useTransport } from '../lib/transportStore.ts'
+import { useWizard } from '../lib/wizardStore.ts'
 
 export default function SettingsPage() {
-  const demo = useProviderMode((s) => s.demo)
-  const setDemo = useProviderMode((s) => s.setDemo)
-  const [baseUrl, setBaseUrl] = useState('https://api.deepseek.com')
-  const [model, setModel] = useState('deepseek-flash')
+  const demo = useProviderMode((state) => state.demo)
+  const setDemo = useProviderMode((state) => state.setDemo)
+  const [gemini, setGemini] = useState<GeminiWebStatus>({ connected: false, detail: '正在检查…' })
+  const [busy, setBusy] = useState(false)
+  const { settings, saving, save } = useTransport()
+  const generating = useWizard((state) => state.busy)
+  const [baseUrl, setBaseUrl] = useState(settings?.baseUrl || 'https://api.deepseek.com')
+  const [model, setModel] = useState(settings?.model || 'deepseek-flash')
   const [apiKey, setApiKey] = useState('')
-  const [hasKey, setHasKey] = useState(false)
-  const [models, setModels] = useState<ModelInfo[] | null>(null)
-  const [status, setStatus] = useState<{ kind: 'idle' | 'ok' | 'error' | 'busy'; text: string }>(
-    { kind: 'idle', text: '' },
-  )
-
+  const [notice, setNotice] = useState('')
   useEffect(() => {
-    void (async () => {
-      try {
-        const s = await getSettings()
-        setBaseUrl(s.baseUrl)
-        setModel(s.model)
-        setHasKey(s.hasKey)
-      } catch (err) {
-        setStatus({ kind: 'error', text: describeError(err) })
-      }
-    })()
+    if (settings) { setBaseUrl(settings.baseUrl); setModel(settings.model) }
+  }, [settings?.baseUrl, settings?.model])
+
+  const refresh = useCallback(async () => {
+    try {
+      setGemini(await getGeminiStatus())
+    } catch (error) {
+      setGemini({ connected: false, detail: error instanceof Error ? error.message : String(error) })
+    }
   }, [])
 
-  const onSave = useCallback(async () => {
-    setStatus({ kind: 'busy', text: '保存中…' })
-    try {
-      const s = await saveSettings({
-        baseUrl,
-        model,
-        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-      })
-      setHasKey(s.hasKey)
-      setApiKey('')
-      setStatus({ kind: 'ok', text: '已保存，Key 只写入本地 .env，接口不会回显' })
-    } catch (err) {
-      setStatus({ kind: 'error', text: describeError(err) })
-    }
-  }, [apiKey, baseUrl, model])
+  useEffect(() => {
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 3000)
+    return () => window.clearInterval(timer)
+  }, [refresh, gemini.account])
 
-  const onTest = useCallback(async () => {
-    setStatus({ kind: 'busy', text: '正在连接…' })
-    setModels(null)
+  const login = useCallback(async () => {
+    setBusy(true)
     try {
-      const result = await listModels()
-      setModels(result.models)
-      const flash = result.models.find((m) => m.id === model) ?? result.models[0]
-      const vision = flash?.supportsVision
-      setStatus({
-        kind: 'ok',
-        text: `连接成功，共 ${result.models.length} 个模型` +
-          (flash ? `；当前选的 ${flash.id} ${vision ? '支持图片输入' : '不支持图片输入（将走结构化问句）'}` : ''),
-      })
-    } catch (err) {
-      setStatus({ kind: 'error', text: describeError(err) })
+      await openGeminiLogin(gemini.account ?? '')
+      await refresh()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
     }
-  }, [model])
+  }, [refresh, gemini.account])
 
   return (
     <div className="space-y-8">
@@ -75,155 +53,69 @@ export default function SettingsPage() {
           <input
             type="checkbox"
             checked={demo}
-            onChange={(e) => setDemo(e.target.checked)}
+            onChange={(event) => setDemo(event.target.checked)}
             className="mt-0.5"
           />
           <span className="text-sm">
             演示模式（使用假数据）
             <span className="mt-1 block text-xs text-neutral-500 dark:text-neutral-400">
-              开启后不调用任何模型，用写死的示例文案走完整流程，适合验证交互或没有 key 时试用。
-              关闭后走真实 DeepSeek 调用。
+              开启后不访问任何模型；关闭后使用顶部选中的渠道，提交 Skill、需求、底图和参考图。
             </span>
           </span>
         </label>
       </section>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold">模型接入</h2>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            默认使用 DeepSeek <code className="font-mono">deepseek-flash</code>（支持图片输入）。
-          </p>
-        </div>
-
-        <Field label="Base URL">
-          <input
-            className={inputClass}
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://api.deepseek.com"
-          />
-        </Field>
-
-        <Field label="模型">
-          <input
-            className={inputClass}
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="deepseek-flash"
-          />
-        </Field>
-
-        <Field
-          label="API Key"
-          hint={hasKey ? '已配置（不会回显，留空则保持不变）' : '尚未配置'}
-        >
-          <input
-            className={inputClass}
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={hasKey ? '••••••••（留空保持不变）' : 'sk-...'}
-            autoComplete="off"
-          />
-        </Field>
-
-        <div className="flex gap-2">
-          <button type="button" className={primaryBtn} onClick={onSave}>
-            保存
-          </button>
-          <button type="button" className={secondaryBtn} onClick={onTest}>
-            测试连接
-          </button>
-        </div>
-
-        {status.kind !== 'idle' && (
-          <p
-            className={
-              'rounded-lg px-3 py-2 text-sm ' +
-              (status.kind === 'error'
-                ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'
-                : status.kind === 'ok'
-                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                  : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300')
-            }
-          >
-            {status.text}
-          </p>
-        )}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold">API 设置</h2>
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">默认 DeepSeek V4.1 Flash（deepseek-flash），支持图片。API 与网页模式使用相同的置景合成、真人 Cosplay 后期 Skill。API 单独计费，不使用 Gemini Pro 会员额度。</p>
+        <form className="space-y-3" onSubmit={async (event) => {
+          event.preventDefault()
+          const ok = await save({ baseUrl, model, ...(apiKey.trim() ? { apiKey } : {}) })
+          if (ok) { setApiKey(''); setNotice('API 设置已保存；可在顶部一键切换。') }
+        }}>
+          <fieldset disabled={!settings || saving || generating} className="space-y-3 disabled:opacity-50">
+            <label className="block text-sm">API 地址<input type="url" required value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-neutral-300 bg-transparent px-3 dark:border-neutral-700" /></label>
+            <label className="block text-sm">模型 ID<input required value={model} onChange={(e) => setModel(e.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-neutral-300 bg-transparent px-3 dark:border-neutral-700" /></label>
+            <label className="block text-sm">API Key（{settings?.hasKey ? '已配置，留空保留' : '尚未配置'}）<input type="password" autoComplete="new-password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="mt-1 block min-h-11 w-full rounded-lg border border-neutral-300 bg-transparent px-3 dark:border-neutral-700" /></label>
+            <p className="text-xs text-neutral-600 dark:text-neutral-400">Key 使用本机系统加密保存，不回显。更换服务地址时请同时更换对应 Key；自定义模型须支持图片及当前请求格式。</p>
+            <button type="submit" className="min-h-11 rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white dark:bg-neutral-100 dark:text-neutral-900">{saving ? '正在保存…' : '保存 API 设置'}</button>
+          </fieldset>
+        </form>
+        {notice && <p role="status" className="text-sm">{notice}</p>}
       </section>
 
-      {models && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold">可用模型</h2>
-          <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
-            <table className="w-full text-sm">
-              <thead className="bg-neutral-100 text-left dark:bg-neutral-800/60">
-                <tr>
-                  <th className="px-3 py-2 font-medium">ID</th>
-                  <th className="px-3 py-2 font-medium">上下文</th>
-                  <th className="px-3 py-2 font-medium">最大输出</th>
-                  <th className="px-3 py-2 font-medium">图片输入</th>
-                </tr>
-              </thead>
-              <tbody>
-                {models.map((m) => (
-                  <tr key={m.id} className="border-t border-neutral-200 dark:border-neutral-800">
-                    <td className="px-3 py-2 font-mono">{m.id}</td>
-                    <td className="px-3 py-2">{formatTokens(m.contextWindow)}</td>
-                    <td className="px-3 py-2">{formatTokens(m.maxOutputTokens)}</td>
-                    <td className="px-3 py-2">{m.supportsVision ? '✅' : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold">Gemini 网页连接</h2>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+            不使用 Gemini API 或 API Key。助手会打开真实 Gemini 网页，上传图片、提交绑定后的语言模板并抓取回复。
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">{gemini.account || '已登录的 Google 账号'}</p>
+              <p className={`mt-1 text-xs ${gemini.connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                {gemini.connected ? '已登录并可用' : gemini.detail || '尚未登录'}
+              </p>
+              {gemini.account && <p className="mt-1 text-xs text-neutral-500">{gemini.account}</p>}
+            </div>
+            <button
+              type="button"
+              disabled={busy || generating}
+              onClick={() => void login()}
+              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+            >
+              {busy ? '正在打开…' : gemini.connected ? '打开 Gemini 网页' : '登录 Gemini Pro'}
+            </button>
           </div>
-        </section>
-      )}
+        </div>
+
+        <p className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+          登录态保存在本机独立会话中。助手不会读取或保存密码；密码、验证码和 Google 安全确认请在弹出的网页窗口中完成。
+        </p>
+      </section>
     </div>
   )
-}
-
-const inputClass =
-  'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none ' +
-  'focus:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-900'
-
-const primaryBtn =
-  'rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 ' +
-  'dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white'
-
-const secondaryBtn =
-  'rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-100 ' +
-  'dark:border-neutral-700 dark:hover:bg-neutral-800'
-
-function Field(props: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="block space-y-1.5">
-      <span className="flex items-baseline gap-2 text-sm font-medium">
-        {props.label}
-        {props.hint && (
-          <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400">
-            {props.hint}
-          </span>
-        )}
-      </span>
-      {props.children}
-    </label>
-  )
-}
-
-function formatTokens(n?: number): string {
-  if (n === undefined) return '—'
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`
-  return String(n)
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 401) return '认证失败（401）：API Key 无效或未配置正确'
-    if (err.status === 429) return '请求过多（429）：超出并发限制，稍后重试'
-    return err.message
-  }
-  return err instanceof Error ? err.message : String(err)
 }
