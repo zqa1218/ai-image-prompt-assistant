@@ -112,9 +112,41 @@ export default function WizardPage() {
           </button>
         )}
         {isLast && (
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">
-            流程已走完，可以复制提示词，或继续在下方提出修改。
-          </span>
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  confirm(
+                    '开始下一张图？会清空当前的底图与产出（修图需求保留），确定吗？',
+                  )
+                )
+                  state.nextRound()
+              }}
+              className={primaryBtn}
+            >
+              下一张图
+            </button>
+            {state.references.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    confirm(
+                      '开始下一张图并沿用当前参考图？会清空底图与产出，确定吗？',
+                    )
+                  )
+                    state.nextRound(true)
+                }}
+                className={secondaryBtn}
+              >
+                下一张图（沿用参考图）
+              </button>
+            )}
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              流程已走完：先复制提示词，再点「下一张图」开始下一轮。
+            </span>
+          </>
         )}
         {blocker && <span className="text-xs text-amber-600 dark:text-amber-400">{blocker}</span>}
       </footer>

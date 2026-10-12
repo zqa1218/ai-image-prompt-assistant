@@ -57,6 +57,8 @@ export type WizardState = {
   start: (workflowId: string) => void
   reset: () => void
   restartModelContext: () => void
+  /** 一张图做完后开下一组：回到接收步骤，清空底图与产出，需求保留。 */
+  nextRound: (keepReferences?: boolean) => void
   setIntake: (key: string, value: string) => void
   setOriginal: (image: ImageRef | null) => void
   addReference: (image: ImageRef) => void
@@ -264,6 +266,32 @@ export const useWizard = create<WizardState>()((set, get) => {
       set({ stageIndex: 0, records: {}, options: [], selectedOptionId: null, artifact: null,
         referenceItems: [], selectedReferenceItems: [], messages: [],
         notice: '已清除模型旧结论；保留底图、参考图、需求与用户补充，请继续重新分析。' })
+    },
+
+    /**
+     * 上一张图做完后接着做下一张：只换底图。
+     * 修图需求（含用途、输出规格、置景参数等）保留，避免每张图重复填写；
+     * keepReferences 为 true 时连参考图一起沿用，适合同一组照片共用同一张参考。
+     */
+    nextRound(keepReferences = false) {
+      const state = get()
+      set({
+        stageIndex: 0,
+        records: {},
+        original: null,
+        references: keepReferences ? state.references : [],
+        referenceItems: [],
+        selectedReferenceItems: [],
+        options: [],
+        selectedOptionId: null,
+        notes: [],
+        artifact: null,
+        messages: [],
+        busy: false,
+        notice: keepReferences
+          ? '已开始下一组：底图与产出已清空，需求与参考图保留，可在第 1 步调整。'
+          : '已开始下一组：底图、参考图与产出已清空，需求保留，可在第 1 步调整。',
+      })
     },
 
     setIntake(key, value) {

@@ -304,4 +304,57 @@ describe('六步状态机', () => {
     expect(api().referenceItems).toEqual([])
     expect(api().selectedReferenceItems).toEqual([])
   })
+
+  it('走完流程后「下一张图」清空底图与产出但保留修图需求', async () => {
+    api().start('refine')
+    fillIntake('统一成冷调')
+    await api().advance()
+    await api().advance()
+    await api().advance()
+    await api().advance()
+    await api().advance()
+    expect(api().stageIndex).toBe(5)
+    expect(api().artifact).not.toBeNull()
+
+    api().nextRound()
+
+    expect(api().stageIndex).toBe(0)
+    expect(api().original).toBeNull()
+    expect(api().references).toEqual([])
+    expect(api().referenceItems).toEqual([])
+    expect(api().selectedReferenceItems).toEqual([])
+    expect(api().options).toEqual([])
+    expect(api().selectedOptionId).toBeNull()
+    expect(api().artifact).toBeNull()
+    expect(api().messages).toEqual([])
+    expect(api().records).toEqual({})
+    expect(api().intake.requirement).toBe('统一成冷调')
+    expect(api().notice).toContain('下一组')
+  })
+
+  it('「下一张图（沿用参考图）」在清空底图的同时保留参考图与需求', async () => {
+    api().start('refine')
+    fillIntake()
+    api().addReference({
+      name: 'chair.png',
+      dataUrl: 'data:image/png;base64,AAAA',
+      width: 800,
+      height: 600,
+      bytes: 100_000,
+    })
+    await api().advance()
+    await api().advance()
+    await api().advance()
+    await api().advance()
+    await api().advance()
+
+    api().nextRound(true)
+
+    expect(api().stageIndex).toBe(0)
+    expect(api().original).toBeNull()
+    expect(api().references).toHaveLength(1)
+    expect(api().referenceItems).toEqual([])
+    expect(api().artifact).toBeNull()
+    expect(api().intake.requirement).toBe('让产品看起来更高级')
+  })
 })
