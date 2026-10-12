@@ -1,6 +1,7 @@
 const { entrypoints, storage } = require('uxp')
 const { app, core, imaging } = require('photoshop')
 const os = require('os')
+const PLUGIN_VERSION = '0.1.1'
 
 let socket = null
 let retryTimer = null
@@ -36,6 +37,7 @@ async function connect() {
     candidate.onopen = () => {
       clearTimeout(connectionTimer)
       console.log('[PromptWizard] 已连接桌面应用')
+      candidate.send(JSON.stringify({ type: 'pluginHello', version: PLUGIN_VERSION }))
       setStatus('已连接桌面应用', true)
     }
     candidate.onmessage = (event) => { void receive(event.data) }

@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws'
 
 const token = crypto.randomBytes(24).toString('hex')
 const pending = new Map()
+const clients = new Set()
 let plugin = null
 
 export async function attachPhotoshopBridge(server, port) {
@@ -20,11 +21,18 @@ export async function attachPhotoshopBridge(server, port) {
   })
 
   wss.on('connection', (ws) => {
-    plugin?.close()
-    plugin = ws
-    ws.on('message', (raw) => receive(raw))
-    ws.on('close', () => { if (plugin === ws) plugin = null })
-    ws.on('error', () => { if (plugin === ws) plugin = null })
+    ws.promptWizardVersion = '0.0.0'
+    clients.add(ws)
+    choosePlugin()
+    ws.on('message', (raw) => receive(raw, ws))
+    ws.on('close', () => {
+      clients.delete(ws)
+      choosePlugin()
+    })
+    ws.on('error', () => {
+      clients.delete(ws)
+      choosePlugin()
+    })
     ws.send(JSON.stringify({ type: 'hello', ok: true }))
   })
 
@@ -57,9 +65,16 @@ export function captureFromPhotoshop(role) {
   })
 }
 
-function receive(raw) {
+function receive(raw, ws) {
   let message
   try { message = JSON.parse(raw.toString()) } catch { return }
+  if (message?.type === 'pluginHello') {
+    if (ws && typeof message.version === 'string' && /^\d+\.\d+\.\d+$/.test(message.version)) {
+      ws.promptWizardVersion = message.version
+      choosePlugin()
+    }
+    return
+  }
   if (message?.type !== 'captureResult' || typeof message.id !== 'string') return
   const task = pending.get(message.id)
   if (!task) return
@@ -67,4 +82,19 @@ function receive(raw) {
   pending.delete(message.id)
   if (message.error) task.reject(new Error(String(message.error)))
   else task.resolve(message.image)
+}
+
+function choosePlugin() {
+  const ready = [...clients].filter((ws) => ws.readyState === 1)
+  ready.sort((a, b) => compareVersions(b.promptWizardVersion, a.promptWizardVersion))
+  plugin = ready[0] ?? null
+}
+
+function compareVersions(left = '0.0.0', right = '0.0.0') {
+  const a = left.split('.').map(Number)
+  const b = right.split('.').map(Number)
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) - (b[index] || 0)
+  }
+  return 0
 }
