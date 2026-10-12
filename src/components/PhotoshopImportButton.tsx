@@ -99,9 +99,10 @@ export default function PhotoshopImportButton({
         {buttonText}
       </button>
       {status.connected && (
-        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-          {status.mode === 'uxp' ? '面板通道' : '直连通道（无需 UXP 插件）'}
-        </p>
+        <div className="space-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+          <p>{status.mode === 'uxp' ? '面板通道' : '直连通道（无需 UXP 插件）'}</p>
+          <p>有选区时导入选区，无选区时导入完整画布</p>
+        </div>
       )}
       {!status.connected && (
         <p className="text-[11px] text-slate-500 dark:text-slate-400">

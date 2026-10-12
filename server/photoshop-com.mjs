@@ -119,12 +119,15 @@ export async function captureViaPhotoshopCom({ role = 'original', index = -1 } =
   }
 
   const label = role === 'reference' ? '参考图' : '底图'
+  const hasSelection = result.hasSelection === true
   return {
-    name: `${result.name || 'Photoshop'}-${label}.jpg`,
+    name: `${result.name || 'Photoshop'}-${label}${hasSelection ? '-选区' : ''}.jpg`,
     dataUrl: `data:image/jpeg;base64,${buffer.toString('base64')}`,
     width: Number(result.width) || undefined,
     height: Number(result.height) || undefined,
     bytes: buffer.length,
     sourceMime: 'image/jpeg',
+    captureScope: hasSelection ? 'selection' : 'canvas',
+    selectionBounds: result.selectionBounds || null,
   }
 }

@@ -13,6 +13,9 @@ export type ImageRef = {
   originalBytes?: number
   /** 原始文件类型，用于在界面提示"格式已转换"。 */
   sourceMime?: string
+  /** 从 Photoshop 导入时的截取范围。 */
+  captureScope?: 'selection' | 'canvas'
+  selectionBounds?: { left: number; top: number; right: number; bottom: number } | null
 }
 
 export type ImageRole = 'original' | 'reference'

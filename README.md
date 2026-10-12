@@ -83,6 +83,7 @@ npm run dev
 `npm run desktop` 启动桌面端，`npm run desktop:build` 生成 Windows 便携版 EXE 与一键安装包（NSIS，产物在 `release-desktop/`）。
 
 桌面端有两条读取 Photoshop 画布的通道，**都不需要打开 UXP Developer Tools**：
+两条通道都会自动判断活动选区：有选区时导入选区外接框，无选区时导入完整画布。
 
 1. **直连通道（默认，零安装）**：走 Photoshop 自带的 COM 自动化，让 Photoshop 自己把当前画布复制一份、打平、缩到长边 1568px 再导出 JPEG 交给助手。只要 Photoshop 在运行就能用，连插件都不用装，原文档不会被改动。
 2. **面板通道（可选，和耀 Link 同款）**：把 `photoshop-plugin/` 复制进 Photoshop 自己的 `Plug-ins` 目录后，Photoshop 每次启动都会自动加载它，面板里能直接看到连接状态。执行根目录的 `安装 Photoshop 面板（管理员一次）.cmd` 即可，只需要一次管理员确认，之后永久生效。

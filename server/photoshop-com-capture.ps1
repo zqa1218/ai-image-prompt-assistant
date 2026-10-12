@@ -115,5 +115,7 @@ Write-Result @{
   sourceHeight = [int]$info.sourceHeight
   layers = [int]$info.layers
   scaled = [bool]$info.scaled
+  hasSelection = [bool]$info.hasSelection
+  selectionBounds = $info.selectionBounds
   bytes = [int]$length
 }

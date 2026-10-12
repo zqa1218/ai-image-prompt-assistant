@@ -69,6 +69,22 @@
     return 0;
   }
 
+  function selectionBounds(doc) {
+    try {
+      var bounds = doc.selection.bounds;
+      if (!bounds || bounds.length < 4) return null;
+      var left = px(bounds[0]);
+      var top = px(bounds[1]);
+      var right = px(bounds[2]);
+      var bottom = px(bounds[3]);
+      if (right <= left || bottom <= top) return null;
+      return { left: left, top: top, right: right, bottom: bottom };
+    } catch (error) {
+      // ExtendScript 在没有活动选区时读取 selection.bounds 会抛错。
+      return null;
+    }
+  }
+
   var documents = collect();
 
   if (ACTION === 'list') {
@@ -87,14 +103,25 @@
 
   var sourceWidth = documents[useIndex].width;
   var sourceHeight = documents[useIndex].height;
-  var scale = Math.min(1, MAX_SIZE / Math.max(sourceWidth, sourceHeight));
-  var targetWidth = Math.max(1, Math.round(sourceWidth * scale));
-  var targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+  var selectedBounds = selectionBounds(source);
+  var captureWidth = selectedBounds ? selectedBounds.right - selectedBounds.left : sourceWidth;
+  var captureHeight = selectedBounds ? selectedBounds.bottom - selectedBounds.top : sourceHeight;
+  var scale = Math.min(1, MAX_SIZE / Math.max(captureWidth, captureHeight));
+  var targetWidth = Math.max(1, Math.round(captureWidth * scale));
+  var targetHeight = Math.max(1, Math.round(captureHeight * scale));
 
-  // 复制一份再打平，原文档完全不动。
+  // 复制一份再打平和裁剪，原文档完全不动。
   var copy = source.duplicate('PromptWizard export', false);
   try {
     copy.flatten();
+    if (selectedBounds) {
+      copy.crop([
+        UnitValue(selectedBounds.left, 'px'),
+        UnitValue(selectedBounds.top, 'px'),
+        UnitValue(selectedBounds.right, 'px'),
+        UnitValue(selectedBounds.bottom, 'px')
+      ]);
+    }
     if (scale < 1) {
       copy.resizeImage(
         UnitValue(targetWidth, 'px'),
@@ -120,6 +147,8 @@
     sourceHeight: sourceHeight,
     layers: documents[useIndex].layers,
     scaled: scale < 1,
-    active: documents[useIndex].isActive
+    active: documents[useIndex].isActive,
+    hasSelection: selectedBounds !== null,
+    selectionBounds: selectedBounds
   });
 })();

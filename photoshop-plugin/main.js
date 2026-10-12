@@ -67,41 +67,88 @@ async function receive(raw) {
   }
 }
 
+function pixelNumber(value) {
+  if (typeof value === 'number') return value
+  if (value && typeof value === 'object') {
+    if (typeof value.as === 'function') {
+      try { return Number(value.as('px')) } catch {}
+    }
+    if (typeof value._value === 'number') return value._value
+    if (typeof value.value === 'number') return value.value
+  }
+  return Number(value)
+}
+
+function captureRegion(doc) {
+  const canvasWidth = Math.max(1, Math.round(pixelNumber(doc.width)))
+  const canvasHeight = Math.max(1, Math.round(pixelNumber(doc.height)))
+  let raw = null
+  try { raw = doc.selection?.bounds } catch {}
+
+  if (raw) {
+    const left = Math.max(0, Math.round(pixelNumber(raw.left)))
+    const top = Math.max(0, Math.round(pixelNumber(raw.top)))
+    const right = Math.min(canvasWidth, Math.round(pixelNumber(raw.right)))
+    const bottom = Math.min(canvasHeight, Math.round(pixelNumber(raw.bottom)))
+    if ([left, top, right, bottom].every(Number.isFinite) && right > left && bottom > top) {
+      return {
+        hasSelection: true,
+        bounds: { left, top, right, bottom },
+        sourceBounds: { left, top, width: right - left, height: bottom - top },
+        width: right - left,
+        height: bottom - top,
+      }
+    }
+  }
+
+  return {
+    hasSelection: false,
+    bounds: null,
+    sourceBounds: null,
+    width: canvasWidth,
+    height: canvasHeight,
+  }
+}
+
 async function captureActiveDocument(role) {
   return core.executeAsModal(async () => {
     const doc = app.activeDocument
     if (!doc) throw new Error('请先在 Photoshop 中打开一个文档')
-    const width = Number(doc.width)
-    const height = Number(doc.height)
-    const scale = Math.min(1, 1568 / Math.max(width, height))
+    const region = captureRegion(doc)
+    const scale = Math.min(1, 1568 / Math.max(region.width, region.height))
     const targetSize = {
-      width: Math.max(1, Math.round(width * scale)),
-      height: Math.max(1, Math.round(height * scale)),
+      width: Math.max(1, Math.round(region.width * scale)),
+      height: Math.max(1, Math.round(region.height * scale)),
     }
-    // 不传 layerID/sourceBounds：读取当前活动文档的完整合成画布。
-    const result = await imaging.getPixels({
+    const options = {
       documentID: doc.id,
       targetSize,
       colorSpace: 'RGB',
       colorProfile: 'sRGB IEC61966-2.1',
       componentSize: 8,
       applyAlpha: true,
-    })
+    }
+    // Photoshop 存在有效选区时只读取选区外接框；无选区时保持原来的整画布读取。
+    if (region.sourceBounds) options.sourceBounds = region.sourceBounds
+    const result = await imaging.getPixels(options)
     try {
       const base64 = await imaging.encodeImageData({ imageData: result.imageData, base64: true })
       const bytes = Math.floor((base64.length * 3) / 4)
+      const label = role === 'reference' ? '参考图' : '底图'
       return {
-        name: `${doc.title || 'Photoshop'}-${role === 'reference' ? '参考图' : '底图'}.jpg`,
+        name: `${doc.title || 'Photoshop'}-${label}${region.hasSelection ? '-选区' : ''}.jpg`,
         dataUrl: `data:image/jpeg;base64,${base64}`,
         width: result.imageData.width || targetSize.width,
         height: result.imageData.height || targetSize.height,
         bytes,
         sourceMime: 'image/jpeg',
+        captureScope: region.hasSelection ? 'selection' : 'canvas',
+        selectionBounds: region.bounds,
       }
     } finally {
       result.imageData.dispose()
     }
-  }, { commandName: '导入当前完整画布', timeOut: 5000 })
+  }, { commandName: '从 Photoshop 导入图片', timeOut: 5000 })
 }
 
 async function readEndpoint() {

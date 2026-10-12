@@ -215,6 +215,11 @@ function ImageCard({
         <p>
           {image.width} × {image.height} · {formatBytes(image.bytes)}
         </p>
+        {image.captureScope && (
+          <p className="text-violet-600 dark:text-violet-400">
+            {image.captureScope === 'selection' ? '已导入 Photoshop 选区' : '已导入 Photoshop 完整画布'}
+          </p>
+        )}
         {converted && (
           <p className="text-emerald-600 dark:text-emerald-400">
             格式已转换：{image.sourceMime || '未知类型'} →{' '}
