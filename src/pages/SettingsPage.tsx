@@ -36,7 +36,7 @@ export default function SettingsPage() {
   const login = useCallback(async () => {
     setBusy(true)
     try {
-      await openGeminiLogin(gemini.account ?? '')
+      await openGeminiLogin('')
       await refresh()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error))
@@ -88,7 +88,7 @@ export default function SettingsPage() {
         <div>
           <h2 className="text-sm font-semibold">Gemini 网页连接</h2>
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            不使用 Gemini API 或 API Key。助手会打开真实 Gemini 网页，上传图片、提交绑定后的语言模板并抓取回复。
+            不使用 Gemini API 或 API Key。助手会打开一个独立的真实 Chrome 窗口，上传图片、提交绑定后的语言模板并抓取回复。用真实浏览器是因为 Google 会拒绝内嵌窗口登录。
           </p>
         </div>
 
@@ -113,7 +113,7 @@ export default function SettingsPage() {
         </div>
 
         <p className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
-          登录态保存在本机独立会话中。助手不会读取或保存密码；密码、验证码和 Google 安全确认请在弹出的网页窗口中完成。
+          登录态保存在助手自己的浏览器配置里，不动你平时用的 Chrome 资料。第一次使用请在弹出的 Chrome 窗口完成 Google 登录（邮箱已自动填好），密码、验证码与安全确认都在那个窗口里完成——助手既不读取也不保存密码，登录一次后长期有效。
         </p>
       </section>
     </div>

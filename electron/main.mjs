@@ -28,7 +28,13 @@ if (!app.requestSingleInstanceLock()) {
 
     const icon = path.join(here, '..', 'assets', 'icon.ico')
     globalThis.promptWizardSafeStorage = safeStorage
-    globalThis.promptWizardGeminiWeb = new GeminiWebController({ icon, dataDir: app.getPath('userData') })
+    globalThis.promptWizardGeminiWeb = new GeminiWebController({
+      icon,
+      dataDir: app.getPath('userData'),
+      // Gemini 会话跑在真实 Chrome / Edge 里，配置目录单独放，不碰用户平时的浏览器资料。
+      browserProfileDir: path.join(app.getPath('appData'), 'PromptWizard', 'gemini-browser'),
+      browserExecutable: process.env.PW_BROWSER_PATH || '',
+    })
 
     try {
       const pluginPath = await installPhotoshopPlugin({ app, projectRoot: path.join(here, '..') })
@@ -60,4 +66,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => app.quit())
+  app.on('will-quit', () => {
+    void globalThis.promptWizardGeminiWeb?.window?.close?.()
+  })
 }

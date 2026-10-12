@@ -6,10 +6,14 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { compileGeminiWebRequest } from '../server/gemini-web-request.mjs'
 import { ConversationStore, conversationUrl } from './conversation-store.mjs'
+import { CdpBrowserSession, findBrowserExecutable } from './cdp-browser.mjs'
 
 const GEMINI_URL = 'https://gemini.google.com/app'
+/** 点击“登录”万一没跳转，就直接开这个地址，参数与 Gemini 自己用的一致。 */
+const SIGN_IN_URL = 'https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Fgemini.google.com%2Fapp&flowName=GlifWebSignIn&flowEntry=ServiceLogin'
 const DEFAULT_ACCOUNT = process.env.PW_GEMINI_ACCOUNT || localAccount()
-const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36'
+/** 内嵌窗口回退时才用，版本号取当前内核自己的，避免 UA 与真实内核对不上。 */
+const CHROME_USER_AGENT = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome || '148.0.0.0'} Safari/537.36`
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -23,19 +27,56 @@ function localAccount() {
 }
 
 export class GeminiWebController {
-  constructor({ icon, dataDir }) {
+  constructor({ icon, dataDir, browserProfileDir, browserExecutable }) {
     this.icon = icon
     this.window = null
     this.queue = Promise.resolve()
     this.conversations = new ConversationStore(dataDir)
+    this.browserProfileDir = browserProfileDir || path.join(dataDir, 'gemini-browser-profile')
+    this.browserExecutable = browserExecutable ?? ''
+    this.fallbackReason = ''
   }
 
   async ensureWindow(show = false) {
     if (this.window && !this.window.isDestroyed()) {
-      if (show) this.window.show()
+      if (show) await this.window.show()
       return this.window
     }
 
+    const win = await this.#openSession()
+    this.window = win
+    win.on('closed', () => { if (this.window === win) this.window = null })
+    if (show) await win.show()
+    return win
+  }
+
+  /**
+   * 优先用真实 Chrome / Edge 承载会话。
+   * Google 会拒绝 Electron 内嵌窗口登录（跳到 signin/rejected，提示
+   * 「此浏览器或应用可能不安全」），伪造 UA 与 Client Hints 一样被拒，
+   * 所以只有真实浏览器能完成登录并在此后长期保持会话。
+   */
+  async #openSession() {
+    const executable = findBrowserExecutable(this.browserExecutable)
+    if (!executable) {
+      this.fallbackReason = '没有找到 Chrome 或 Edge'
+      return this.#openEmbeddedWindow()
+    }
+    try {
+      const session = await CdpBrowserSession.launch({
+        profileDir: this.browserProfileDir,
+        executable,
+        startUrl: GEMINI_URL,
+      })
+      this.fallbackReason = ''
+      return session
+    } catch (error) {
+      this.fallbackReason = error instanceof Error ? error.message : String(error)
+      return this.#openEmbeddedWindow()
+    }
+  }
+
+  async #openEmbeddedWindow() {
     const win = new BrowserWindow({
       width: 1180,
       height: 860,
@@ -51,19 +92,16 @@ export class GeminiWebController {
         nodeIntegration: false,
       },
     })
-    this.window = win
     win.setMenuBarVisibility(false)
     // Gemini serves Electron's branded user agent a non-interactive SSR shell.
     // A regular Chrome UA loads the same authenticated web app with working controls.
     win.webContents.setUserAgent(CHROME_USER_AGENT)
-    win.on('closed', () => { if (this.window === win) this.window = null })
     win.webContents.setWindowOpenHandler(({ url }) => {
       if (isGoogleUrl(url)) return { action: 'allow' }
       void shell.openExternal(url)
       return { action: 'deny' }
     })
     await this.#loadGemini(win)
-    if (show) win.show()
     return win
   }
 
@@ -71,46 +109,127 @@ export class GeminiWebController {
     const win = await this.ensureWindow(false)
     const state = await win.webContents.executeJavaScript(`(() => {
       const visible = (node) => node && node.getClientRects().length > 0;
-      const buttons = [...document.querySelectorAll('button,[role="button"]')].filter(visible);
+      const buttons = [...document.querySelectorAll('button,[role="button"],a')].filter(visible);
       const login = buttons.some((node) => /^(登录|Sign in)$/i.test((node.innerText || node.getAttribute('aria-label') || '').trim()));
       const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find(visible);
       const accountNode = buttons.find((node) => /Google (账号|Account)/i.test(node.getAttribute('aria-label') || ''));
+      const body = document.body ? document.body.innerText || '' : '';
       return {
         connected: location.hostname === 'gemini.google.com' && Boolean(editor) && !login,
+        host: location.hostname,
         account: accountNode ? accountNode.getAttribute('aria-label') : '',
-        url: location.href
+        url: location.href,
+        blocked: /此浏览器或应用可能不安全|may not be secure/i.test(body),
+        signin: /(^|\.)accounts\.google\.com$/.test(location.hostname)
       };
     })()`)
+    const connected = Boolean(state.connected)
     return {
-      connected: Boolean(state.connected),
+      connected,
       account: String(state.account || ''),
-      detail: state.connected
+      engine: win instanceof CdpBrowserSession ? 'chrome' : 'embedded',
+      url: String(state.url || ''),
+      detail: connected
         ? 'Gemini 网页已登录，可自动提交图片与提示词'
-        : '请在 Gemini 网页窗口登录 Google 账号',
+        : state.blocked
+          ? 'Google 拒绝了这个浏览器登录（此浏览器或应用可能不安全），请改用真实 Chrome / Edge 承载会话'
+          : state.signin
+            ? '正停留在 Google 登录页：请在窗口里输入密码完成登录'
+            : this.fallbackReason
+              ? `会话跑在内嵌窗口里（${this.fallbackReason}），请在其中登录 Google 账号`
+              : '请在 Gemini 网页窗口登录 Google 账号',
     }
   }
 
   async openLogin(email = DEFAULT_ACCOUNT) {
-    const win = await this.ensureWindow(true)
+    const win = await this.ensureWindow(false)
+    await win.show()
+    // 面板传进来的可能是账号显示名，只有像邮箱时才拿来填表；否则用本机账号文件。
+    const address = /@/.test(String(email)) ? String(email).trim() : DEFAULT_ACCOUNT
     let state = await this.status()
-    if (email && (!state.connected || (state.account && !state.account.includes(email)))) {
-      await win.webContents.executeJavaScript(`(() => {
+    if (state.connected) {
+      await win.show()
+      return state
+    }
+
+    // 会话过期时窗口可能停在 Google 登录页；先回到 Gemini，再决定要不要点“登录”。
+    if (!/^https:\/\/gemini\.google\.com/.test(state.url || '')) {
+      await this.#loadGemini(win, GEMINI_URL)
+      state = await this.status()
+    }
+    if (!state.connected) {
+      await this.#clickSignIn(win)
+      // 点完要等页面真的跳到 Google 登录页；刚重载时按钮还没渲染，这里一起兜住。
+      const deadline = Date.now() + 10000
+      while (Date.now() < deadline) {
+        await delay(600)
+        state = await this.status()
+        if (state.connected || !/gemini\.google\.com/.test(state.url || '')) break
+      }
+      if (!state.connected && /gemini\.google\.com/.test(state.url || '')) {
+        await this.#loadGemini(win, SIGN_IN_URL)
+        state = await this.status()
+      }
+    }
+    if (!state.connected && address) await this.#fillLoginEmail(win, address)
+    await win.show()
+    return this.status()
+  }
+
+  async #clickSignIn(win) {
+    const deadline = Date.now() + 15000
+    while (Date.now() < deadline) {
+      const clicked = await win.webContents.executeJavaScript(`(() => {
         const visible = (node) => node && node.getClientRects().length > 0;
         const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
         const login = [...document.querySelectorAll('button,a')].find((node) => visible(node) && /^(登录|Sign in)$/i.test(label(node)));
-        if (login) login.click();
-      })()`)
-      await delay(800)
-      const emailField = await win.webContents.executeJavaScript(`Boolean(document.querySelector('input[type="email"]'))`)
-      if (emailField) {
-        await win.webContents.executeJavaScript(`document.querySelector('input[type="email"]').focus()`)
-        await win.webContents.insertText(email)
-      }
-      state = await this.status()
+        if (!login) return false;
+        login.click();
+        return true;
+      })()`).catch(() => false)
+      if (clicked) return true
+      await delay(500)
     }
-    win.show()
-    win.focus()
-    return this.status()
+    return false
+  }
+
+  /**
+   * Google 登录页的输入框是 input[name="identifier"]，不是 input[type="email"]，
+   * 老版本按 type=email 找导致自动填充永远不生效。这里按当前页面结构填写并点“下一步”。
+   */
+  async #fillLoginEmail(win, email) {
+    const deadline = Date.now() + 20000
+    while (Date.now() < deadline) {
+      const filled = await win.webContents.executeJavaScript(`(() => {
+        const visible = (node) => node && node.getClientRects().length > 0;
+        const field = [...document.querySelectorAll('input[name="identifier"], input[type="email"], input[type="text"], input[type="password"]')].find(visible);
+        if (!field) return 'NO_FIELD';
+        if (field.type === 'password') return 'PASSWORD';
+        const value = ${JSON.stringify(String(email))};
+        if ((field.value || '') === value) return 'ALREADY';
+        field.focus();
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(field, value);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+        return 'FILLED';
+      })()`).catch(() => 'RETRY')
+      if (filled === 'PASSWORD') return 'password'
+      if (filled === 'FILLED' || filled === 'ALREADY') {
+        await delay(500)
+        const clicked = await win.webContents.executeJavaScript(`(() => {
+          const visible = (node) => node && node.getClientRects().length > 0;
+          const next = [...document.querySelectorAll('button')].find((node) => visible(node) && /^(下一步|Next)$/i.test((node.innerText || '').trim()));
+          if (!next) return false;
+          next.click();
+          return true;
+        })()`).catch(() => false)
+        if (clicked) await delay(2500)
+        return clicked ? 'submitted' : 'filled'
+      }
+      await delay(500)
+    }
+    return 'timeout'
   }
 
   submit(body) {
@@ -136,8 +255,7 @@ export class GeminiWebController {
     const saved = this.conversations.get(id)
     const target = saved?.url || GEMINI_URL
     if (!saved || conversationUrl(win.webContents.getURL()) !== saved.url) await this.#loadGemini(win, target)
-    win.show()
-    win.focus()
+    await win.show()
     await this.#waitForEditor(win)
 
     if (saved && conversationUrl(win.webContents.getURL()) !== saved.url) {
@@ -146,7 +264,7 @@ export class GeminiWebController {
 
     const state = await this.status()
     if (!state.connected) {
-      throw new Error(`Gemini 网页尚未登录。请在已打开的窗口登录 ${DEFAULT_ACCOUNT}，完成后重试`)
+      throw new Error(`Gemini 网页尚未登录：${state.detail}${DEFAULT_ACCOUNT ? `（账号 ${DEFAULT_ACCOUNT}）` : ''}`)
     }
 
     const tempDir = await mkdtemp(path.join(os.tmpdir(), 'promptwizard-gemini-'))
@@ -176,6 +294,7 @@ export class GeminiWebController {
       this.conversations.set(id, win.webContents.getURL(), true)
       await this.#send(win)
       const content = await this.#waitForResponse(win, before)
+      await win.refreshUrl?.()
       const url = conversationUrl(win.webContents.getURL())
       if (!url) throw new Error('Gemini 未提供可恢复的对话链接，请关闭临时聊天后重试')
       this.conversations.set(id, url, false, uploaded)
@@ -188,10 +307,12 @@ export class GeminiWebController {
   async #waitForEditor(win) {
     const deadline = Date.now() + 30000
     while (Date.now() < deadline) {
-      const found = await win.webContents.executeJavaScript(`Boolean([...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find((node) => node.getClientRects().length > 0))`)
+      const found = await win.webContents.executeJavaScript(`Boolean([...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find((node) => node.getClientRects().length > 0))`).catch(() => false)
       if (found) return
       await delay(500)
     }
+    const state = await this.status().catch(() => null)
+    if (state && !state.connected) throw new Error(`Gemini 网页无法提交：${state.detail}`)
     throw new Error('Gemini 网页加载超时，请检查网络后重试')
   }
 
@@ -244,6 +365,7 @@ export class GeminiWebController {
           clearTimeout(timer)
           debuggerApi.removeListener('message', onMessage)
           try {
+            await debuggerApi.sendCommand('DOM.enable')
             await debuggerApi.sendCommand('DOM.setFileInputFiles', {
               files,
               backendNodeId: params.backendNodeId,

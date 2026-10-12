@@ -4,6 +4,11 @@ import os from 'node:os'
 import path from 'node:path'
 
 const fake = vi.hoisted(() => ({ windows: [], chats: new Map(), next: 0 }))
+// 单元测试里不启动真实浏览器，统一走内嵌窗口分支。
+vi.mock('./cdp-browser.mjs', () => ({
+  CdpBrowserSession: class {},
+  findBrowserExecutable: () => '',
+}))
 vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
   BrowserWindow: class {
