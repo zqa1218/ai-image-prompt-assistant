@@ -8,14 +8,14 @@
 
 ## 安装（普通用户）
 
-到 Releases 页下载 **`AI-Prompt-Wizard-Setup-0.2.1.exe`**（安装后程序名显示为「AI修图提示词助手」），双击后一路到底，全程只有一次 UAC 提权确认：
+到 Releases 页下载 **`AI-Prompt-Wizard-Setup-0.2.2.exe`**（安装后程序名显示为「AI修图提示词助手」），双击后一路到底，全程只有一次 UAC 提权确认：
 
 - 主程序装到 `C:\Program Files\AI修图提示词助手`，自动建桌面与开始菜单快捷方式，装完直接启动
 - 自动把 Photoshop 面板 `com.promptwizard.photoshop-link` 写进本机所有 Photoshop 的 `Plug-ins` 目录（先查注册表定位，找不到再扫默认安装路径），重启 Photoshop 后可在「窗口 > 插件」里看到
 - 没装 Photoshop、或面板写入失败都不影响使用：助手还有不需要任何插件的直连通道
 - 卸载时一并移除面板插件，但保留你的设置与对话记录
 
-不想安装可以用便携版（Releases 里的 `AI-Prompt-Wizard-Portable-0.2.1.exe`，本地构建叫 `AI修图提示词助手-0.2.1-x64.exe`），免安装直接运行；想用面板通道时再执行一次根目录的 `安装 Photoshop 面板（管理员一次）.cmd`。
+不想安装可以用便携版（Releases 里的 `AI-Prompt-Wizard-Portable-0.2.2.exe`，本地构建叫 `AI修图提示词助手-0.2.2-x64.exe`），免安装直接运行；想用面板通道时再执行一次根目录的 `安装 Photoshop 面板（管理员一次）.cmd`。
 
 ## 能做什么
 **两条工作路径，同一套分析流程**
@@ -72,7 +72,7 @@ npm run dev
 
 ### Gemini 接入说明
 
-桌面端用一个**独立的真实 Chrome / Edge 窗口**打开 `gemini.google.com`：按底图内容指纹绑定一个网页对话，分析、参考图提取、方向、细化、生成与迭代都复用它。切换模式或重启助手后，再上传相同底图仍会恢复对应对话；文件改名不影响，底图像素内容或编码发生变化则视为新图。同一对话中未变化的附件不重复上传。每轮完整发送 Skill 和当前任务快照，避免已撤回的要求继续生效。全程不调用 Gemini API。
+桌面端用一个**独立的真实 Chrome / Edge 窗口**打开 `gemini.google.com`：提交前通过网页模式选择器自动切换到 Gemini 4 Argon，再按底图内容指纹绑定一个网页对话，分析、参考图提取、方向、细化、生成与迭代都复用它。切换模式或重启助手后，再上传相同底图仍会恢复对应对话；文件改名不影响，底图像素内容或编码发生变化则视为新图。同一对话中未变化的附件不重复上传。每轮完整发送 Skill 和当前任务快照，避免已撤回的要求继续生效。全程不调用 Gemini API。
 
 **为什么必须用真实浏览器**：Google 登录页会拒绝 Electron 内嵌窗口，跳到 `accounts.google.com/v3/signin/rejected` 并提示「此浏览器或应用可能不安全」；伪造 UA 与 Client Hints 也一样被拒。改用真实 Chrome / Edge（通过 CDP 驱动，自动化逻辑不变）后登录正常。登录态保存在助手自己的浏览器配置目录（`%APPDATA%\PromptWizard\gemini-browser`），不碰用户平时的 Chrome 资料，登录一次即长期有效。想指定浏览器可设环境变量 `PW_BROWSER_PATH`。
 

@@ -9,6 +9,9 @@ import { ConversationStore, conversationUrl } from './conversation-store.mjs'
 import { CdpBrowserSession, findBrowserExecutable } from './cdp-browser.mjs'
 
 const GEMINI_URL = 'https://gemini.google.com/app'
+const EDITOR_SELECTOR = '[contenteditable="true"][role="textbox"], rich-textarea [contenteditable="true"], .ql-editor[contenteditable="true"], textarea'
+const MODEL_BUTTON_SELECTOR = '[data-test-id="bard-mode-menu-button"], bard-mode-switcher button[aria-haspopup="true"], button[aria-label*="模式选择器"], button[aria-label*="model picker" i]'
+const PREFERRED_GEMINI_MODEL = 'Argon'
 /** 点击“登录”万一没跳转，就直接开这个地址，参数与 Gemini 自己用的一致。 */
 const SIGN_IN_URL = 'https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Fgemini.google.com%2Fapp&flowName=GlifWebSignIn&flowEntry=ServiceLogin'
 const DEFAULT_ACCOUNT = process.env.PW_GEMINI_ACCOUNT || localAccount()
@@ -111,13 +114,15 @@ export class GeminiWebController {
       const visible = (node) => node && node.getClientRects().length > 0;
       const buttons = [...document.querySelectorAll('button,[role="button"],a')].filter(visible);
       const login = buttons.some((node) => /^(登录|Sign in)$/i.test((node.innerText || node.getAttribute('aria-label') || '').trim()));
-      const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find(visible);
+      const editor = [...document.querySelectorAll(${JSON.stringify(EDITOR_SELECTOR)})].find(visible);
+      const modelButton = document.querySelector(${JSON.stringify(MODEL_BUTTON_SELECTOR)});
       const accountNode = buttons.find((node) => /Google (账号|Account)/i.test(node.getAttribute('aria-label') || ''));
       const body = document.body ? document.body.innerText || '' : '';
       return {
         connected: location.hostname === 'gemini.google.com' && Boolean(editor) && !login,
         host: location.hostname,
         account: accountNode ? accountNode.getAttribute('aria-label') : '',
+        model: modelButton ? (modelButton.innerText || modelButton.getAttribute('aria-label') || '').trim() : '',
         url: location.href,
         blocked: /此浏览器或应用可能不安全|may not be secure/i.test(body),
         signin: /(^|\.)accounts\.google\.com$/.test(location.hostname)
@@ -127,10 +132,11 @@ export class GeminiWebController {
     return {
       connected,
       account: String(state.account || ''),
+      model: String(state.model || ''),
       engine: win instanceof CdpBrowserSession ? 'chrome' : 'embedded',
       url: String(state.url || ''),
       detail: connected
-        ? 'Gemini 网页已登录，可自动提交图片与提示词'
+        ? `Gemini 网页已登录${state.model ? `，当前模式 ${state.model}` : ''}；提交时自动使用 Gemini 4 Argon`
         : state.blocked
           ? 'Google 拒绝了这个浏览器登录（此浏览器或应用可能不安全），请改用真实 Chrome / Edge 承载会话'
           : state.signin
@@ -267,11 +273,13 @@ export class GeminiWebController {
       throw new Error(`Gemini 网页尚未登录：${state.detail}${DEFAULT_ACCOUNT ? `（账号 ${DEFAULT_ACCOUNT}）` : ''}`)
     }
 
+    await this.#selectGemini4(win)
+
     const tempDir = await mkdtemp(path.join(os.tmpdir(), 'promptwizard-gemini-'))
     try {
       // 先检查草稿；不覆盖用户在同一窗口手动输入的内容。
       const hasDraft = await win.webContents.executeJavaScript(`(() => {
-        const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find((node) => node.getClientRects().length > 0);
+        const editor = [...document.querySelectorAll(${JSON.stringify(EDITOR_SELECTOR)})].find((node) => node.getClientRects().length > 0);
         return Boolean((editor?.value ?? editor?.innerText ?? '').trim());
       })()`)
       if (hasDraft) throw new Error('Gemini 输入框中有未发送内容，请先处理草稿，再重试')
@@ -307,13 +315,66 @@ export class GeminiWebController {
   async #waitForEditor(win) {
     const deadline = Date.now() + 30000
     while (Date.now() < deadline) {
-      const found = await win.webContents.executeJavaScript(`Boolean([...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find((node) => node.getClientRects().length > 0))`).catch(() => false)
+      const found = await win.webContents.executeJavaScript(`Boolean([...document.querySelectorAll(${JSON.stringify(EDITOR_SELECTOR)})].find((node) => node.getClientRects().length > 0))`).catch(() => false)
       if (found) return
       await delay(500)
     }
     const state = await this.status().catch(() => null)
     if (state && !state.connected) throw new Error(`Gemini 网页无法提交：${state.detail}`)
     throw new Error('Gemini 网页加载超时，请检查网络后重试')
+  }
+
+  /** Gemini 4 网页版显示名为 Argon。每次提交前确认一次，避免旧对话仍停在 Flash。 */
+  async #selectGemini4(win) {
+    const readCurrent = () => win.webContents.executeJavaScript(`(() => {
+      /* prompt-wizard:model-current */
+      const button = document.querySelector(${JSON.stringify(MODEL_BUTTON_SELECTOR)});
+      if (!button) return { found: false, current: '' };
+      return { found: true, current: (button.innerText || button.getAttribute('aria-label') || '').trim() };
+    })()`).catch(() => ({ found: false, current: '' }))
+
+    let state = await readCurrent()
+    if (!state.found || /(?:^|\\s)(?:4\\s*)?Argon(?:\\s|$)/i.test(state.current)) return state.current
+
+    const opened = await win.webContents.executeJavaScript(`(() => {
+      /* prompt-wizard:model-open */
+      const button = document.querySelector(${JSON.stringify(MODEL_BUTTON_SELECTOR)});
+      if (!button) return false;
+      if (button.getAttribute('aria-expanded') !== 'true') button.click();
+      return true;
+    })()`).catch(() => false)
+    if (!opened) return state.current
+
+    let available = false
+    const deadline = Date.now() + 8000
+    while (Date.now() < deadline) {
+      const selection = await win.webContents.executeJavaScript(`(() => {
+        /* prompt-wizard:model-option */
+        const visible = (node) => node && node.getClientRects().length > 0;
+        const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
+        const options = [...document.querySelectorAll('[data-test-id^="bard-mode-option-"], gem-menu-item, [role="menuitem"], [role="option"]')].filter(visible);
+        const option = options.find((node) => /(?:^|\\s)(?:4\\s*)?Argon(?:\\s|$)/i.test(label(node)))
+          || options.find((node) => /Gemini\\s*4/i.test(label(node)));
+        if (!option) return { available: false, clicked: false };
+        option.click();
+        return { available: true, clicked: true, label: label(option) };
+      })()`).catch(() => ({ available: false, clicked: false }))
+      available ||= Boolean(selection.available)
+      if (selection.clicked) break
+      await delay(250)
+    }
+
+    if (!available) {
+      throw new Error('当前 Gemini 账号的模式菜单中没有 Gemini 4 Argon，请确认账号权限或网页端是否已开放')
+    }
+
+    const confirmDeadline = Date.now() + 10000
+    while (Date.now() < confirmDeadline) {
+      await delay(300)
+      state = await readCurrent()
+      if (/(?:^|\\s)(?:4\\s*)?Argon(?:\\s|$)/i.test(state.current)) return PREFERRED_GEMINI_MODEL
+    }
+    throw new Error('已选择 Gemini 4 Argon，但网页没有完成模式切换，请刷新 Gemini 后重试')
   }
 
   async #loadGemini(win, url = GEMINI_URL) {
@@ -340,7 +401,8 @@ export class GeminiWebController {
         const visible = (node) => node && node.getClientRects().length > 0;
         const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
         const nodes = [...document.querySelectorAll('*')].filter(visible);
-        const add = nodes.find((node) => /上传和工具|添加文件|Upload and tools|Add files/i.test(label(node)))
+        const add = [...document.querySelectorAll('button,[role="button"]')].find((node) => visible(node) && /上传和工具|添加文件|Upload and tools|Add files/i.test(label(node)))
+          || nodes.find((node) => /上传和工具|添加文件|Upload and tools|Add files/i.test(label(node)))
           || nodes.find((node) => node.children.length === 0 && /^(plus|add)$/i.test((node.textContent || '').trim()));
         if (!add) return null;
         const target = add.closest('button,[role="button"],[tabindex]') || add;
@@ -381,8 +443,8 @@ export class GeminiWebController {
       const uploadTarget = await win.webContents.executeJavaScript(`(() => {
         const visible = (node) => node && node.getClientRects().length > 0;
         const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
-        const matchesUpload = (node) => /^(上传文件|从设备上传|Upload files|Upload from device)$/i.test(label(node));
-        const upload = [...document.querySelectorAll('button,[role="menuitem"],[role="button"],mat-list-item,li')].find((node) => visible(node) && matchesUpload(node))
+        const matchesUpload = (node) => /^(上传文件|从设备上传|Upload files|Upload from device)(?:\\.|$)/i.test(label(node));
+        const upload = [...document.querySelectorAll('[data-test-id="local-images-files-uploader-button"],button,[role="menuitem"],[role="button"],mat-list-item,li')].find((node) => visible(node) && matchesUpload(node))
           || [...document.querySelectorAll('*')].filter((node) => visible(node) && matchesUpload(node)).sort((a, b) => a.children.length - b.children.length)[0];
         if (upload) {
           const target = upload.closest('button,[role="menuitem"],[role="button"],[tabindex]') || upload;
@@ -421,7 +483,7 @@ export class GeminiWebController {
   async #fillPrompt(win, prompt) {
     const focused = await win.webContents.executeJavaScript(`(() => {
       const visible = (node) => node && node.getClientRects().length > 0;
-      const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find(visible);
+      const editor = [...document.querySelectorAll(${JSON.stringify(EDITOR_SELECTOR)})].find(visible);
       if (!editor) return false;
       editor.focus();
       return true;
@@ -437,11 +499,11 @@ export class GeminiWebController {
       const state = await win.webContents.executeJavaScript(`(() => {
         const visible = (node) => node && node.getClientRects().length > 0;
         const label = (node) => (node.getAttribute('aria-label') || node.innerText || '').trim();
-        const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find(visible);
+        const editor = [...document.querySelectorAll(${JSON.stringify(EDITOR_SELECTOR)})].find(visible);
         if (!editor) return null;
         editor.focus();
-        const send = [...document.querySelectorAll('button')].find((node) => visible(node) && !node.disabled && /^(发送消息|发送|Send message|Send)$/i.test(label(node)));
-        const icon = [...document.querySelectorAll('*')].find((node) => visible(node) && node.children.length === 0 && /^(arrow_upward|send)$/i.test((node.textContent || '').trim()));
+        const send = [...document.querySelectorAll('button[aria-label="发送"],button[aria-label="Send"],button')].find((node) => visible(node) && !node.disabled && /^(发送消息|发送|Send message|Send)$/i.test(label(node)));
+        const icon = [...document.querySelectorAll('[data-mat-icon-name="arrow_upward"],[fonticon="arrow_upward"],*')].find((node) => visible(node) && node.children.length === 0 && /^(arrow_upward|send)$/i.test((node.textContent || node.getAttribute('data-mat-icon-name') || node.getAttribute('fonticon') || '').trim()));
         const iconButton = icon?.closest('button');
         const target = send || (iconButton && !iconButton.disabled ? iconButton : null);
         if (!target) return { rect: null };
@@ -457,20 +519,20 @@ export class GeminiWebController {
       await delay(500)
       const cleared = await win.webContents.executeJavaScript(`(() => {
         const visible = (node) => node && node.getClientRects().length > 0;
-        const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find(visible);
+        const editor = [...document.querySelectorAll(${JSON.stringify(EDITOR_SELECTOR)})].find(visible);
         return Boolean(editor && ((editor.value ?? editor.innerText ?? '').trim() === ''));
       })()`)
       if (cleared) return
 
       await win.webContents.executeJavaScript(`(() => {
-        const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find((node) => node.getClientRects().length > 0);
+        const editor = [...document.querySelectorAll(${JSON.stringify(EDITOR_SELECTOR)})].find((node) => node.getClientRects().length > 0);
         editor?.focus();
       })()`)
       win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' })
       win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' })
       await delay(500)
       const clearedByEnter = await win.webContents.executeJavaScript(`(() => {
-        const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"], textarea')].find((node) => node.getClientRects().length > 0);
+        const editor = [...document.querySelectorAll(${JSON.stringify(EDITOR_SELECTOR)})].find((node) => node.getClientRects().length > 0);
         return Boolean(editor && ((editor.value ?? editor.innerText ?? '').trim() === ''));
       })()`)
       if (clearedByEnter) return
@@ -489,14 +551,14 @@ export class GeminiWebController {
 
   async #latestResponse(win) {
     return win.webContents.executeJavaScript(`(() => {
-      const selectors = ['model-response', '[data-test-id="model-response"]', '.model-response-text', 'message-content'];
+      const selectors = ['model-response', '[data-test-id="model-response"]', 'structured-content-container', '.model-response-text', 'message-content'];
       // 历史消息可能移出视口；不能用可见数量来判断有没有新增回复。
       const nodes = selectors.map((selector) => [...document.querySelectorAll(selector)].filter((node) =>
         !node.closest('user-query,user-message')
       )).find((items) => items.length) || [];
       const last = nodes[nodes.length - 1];
       if (last && !last.dataset.promptWizardTurn) last.dataset.promptWizardTurn = crypto.randomUUID();
-      const output = last?.querySelector('.model-response-text, message-content') || last;
+      const output = last?.querySelector('structured-content-container, .model-response-text, message-content') || last;
       return { count: nodes.length, id: last?.dataset.promptWizardTurn || '', text: (output?.innerText || '').trim() };
     })()`)
   }

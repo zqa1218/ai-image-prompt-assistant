@@ -91,7 +91,7 @@ async function handle(req, res) {
     }
 
     case 'GET /api/models':
-      return sendJson(res, 200, { models: [{ id: 'gemini-web', name: 'Gemini 网页当前模型', supportsVision: true }, { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', supportsVision: true }] })
+      return sendJson(res, 200, { models: [{ id: 'gemini-web', name: 'Gemini 4 Argon 网页', supportsVision: true }, { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', supportsVision: true }] })
 
     case 'POST /api/gemini/reset': {
       const body = await readJsonBody(req)

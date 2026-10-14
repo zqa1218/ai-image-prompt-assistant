@@ -88,7 +88,7 @@ export default function SettingsPage() {
         <div>
           <h2 className="text-sm font-semibold">Gemini 网页连接</h2>
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            不使用 Gemini API 或 API Key。助手会打开一个独立的真实 Chrome 窗口，上传图片、提交绑定后的语言模板并抓取回复。用真实浏览器是因为 Google 会拒绝内嵌窗口登录。
+            不使用 Gemini API 或 API Key。助手会打开一个独立的真实 Chrome 窗口，自动切换到 Gemini 4 Argon，上传图片、提交绑定后的语言模板并抓取回复。
           </p>
         </div>
 
@@ -97,7 +97,7 @@ export default function SettingsPage() {
             <div>
               <p className="text-sm font-medium">{gemini.account || '已登录的 Google 账号'}</p>
               <p className={`mt-1 text-xs ${gemini.connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                {gemini.connected ? '已登录并可用' : gemini.detail || '尚未登录'}
+                {gemini.connected ? `已登录并可用${gemini.model ? ` · 当前 ${gemini.model}` : ''}` : gemini.detail || '尚未登录'}
               </p>
               {gemini.account && <p className="mt-1 text-xs text-neutral-500">{gemini.account}</p>}
             </div>

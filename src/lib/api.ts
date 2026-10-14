@@ -87,6 +87,7 @@ export function listModels(): Promise<{ models: ModelInfo[] }> {
 export type GeminiWebStatus = {
   connected: boolean
   account?: string
+  model?: string
   detail?: string
 }
 
