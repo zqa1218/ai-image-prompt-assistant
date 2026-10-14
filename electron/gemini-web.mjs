@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { compileGeminiWebRequest } from '../server/gemini-web-request.mjs'
+import { modelMatcher, resolvePlan } from '../server/gemini-plans.mjs'
 import { ConversationStore, conversationUrl } from './conversation-store.mjs'
 import { CdpBrowserSession, findBrowserExecutable } from './cdp-browser.mjs'
 
@@ -12,7 +13,28 @@ const GEMINI_URL = 'https://gemini.google.com/app'
 const EDITOR_SELECTOR = '[contenteditable="true"][role="textbox"], rich-textarea [contenteditable="true"], .ql-editor[contenteditable="true"], textarea'
 const IMAGE_FILE_INPUT_SELECTOR = 'input[type="file"][accept*="image"]'
 const MODEL_BUTTON_SELECTOR = '[data-test-id="bard-mode-menu-button"], bard-mode-switcher button[aria-haspopup="true"], button[aria-label*="模式选择器"], button[aria-label*="model picker" i]'
-const PREFERRED_GEMINI_MODEL = 'Argon'
+/** 具体方案（模型尝试链、对话/任务模式、思考等级）放在 server/gemini-plans.mjs，和设置页共用一份目录。 */
+const ENV_MODEL = (process.env.PW_GEMINI_MODEL || '').trim()
+/** 误判拒绝只回一句很短的能力否认；长回答里出现同类措辞不算。 */
+const REFUSAL_MAX_LENGTH = 240
+const REFUSAL_MARKERS = [
+  '我只是一个语言模型',
+  '我只是语言模型',
+  '我只是一个文本',
+  '我只会生成文本',
+  '超出了我的程序逻辑范畴',
+  '爱莫能助',
+  '没法帮上',
+  '没法帮到',
+  '没法帮你',
+  '无法提供这方面的帮助',
+  '不能理解或回复你的这个问题',
+  'I am just a language model',
+  'I\u2019m just a language model',
+  "I'm just a language model",
+]
+/** 思考等级：低点 / 中等 / 高点。默认不碰，跟随账号自己的设置。 */
+const THINKING_LEVEL = (process.env.PW_GEMINI_THINKING || '').trim()
 /** 点击“登录”万一没跳转，就直接开这个地址，参数与 Gemini 自己用的一致。 */
 const SIGN_IN_URL = 'https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Fgemini.google.com%2Fapp&flowName=GlifWebSignIn&flowEntry=ServiceLogin'
 const DEFAULT_ACCOUNT = process.env.PW_GEMINI_ACCOUNT || localAccount()
@@ -137,7 +159,7 @@ export class GeminiWebController {
       engine: win instanceof CdpBrowserSession ? 'chrome' : 'embedded',
       url: String(state.url || ''),
       detail: connected
-        ? `Gemini 网页已登录${state.model ? `，当前模式 ${state.model}` : ''}；提交时自动使用 Gemini 4 Argon`
+        ? `Gemini 网页已登录${state.model ? `，当前模式 ${state.model}` : ''}；提交时按网页方案自动选模型，被拒答会自动换下一个`
         : state.blocked
           ? 'Google 拒绝了这个浏览器登录（此浏览器或应用可能不安全），请改用真实 Chrome / Edge 承载会话'
           : state.signin
@@ -274,7 +296,13 @@ export class GeminiWebController {
       throw new Error(`Gemini 网页尚未登录：${state.detail}${DEFAULT_ACCOUNT ? `（账号 ${DEFAULT_ACCOUNT}）` : ''}`)
     }
 
-    await this.#selectGemini4(win)
+    const plan = resolvePlan(body?.geminiPlan)
+    const thinking = String(body?.geminiThinking || THINKING_LEVEL || '').trim()
+    // 尝试链：先用方案里的第一个模型，被误判拒答就换链上的下一个，所以每个方案都能拿到有效回答。
+    const chain = [...(ENV_MODEL ? [ENV_MODEL] : []), ...plan.models]
+      .map((name) => modelMatcher(name))
+      .filter((candidate, index, all) => all.findIndex((item) => item.name === candidate.name) === index)
+    await this.#ensureMode(win, plan.mode)
 
     const tempDir = await mkdtemp(path.join(os.tmpdir(), 'promptwizard-gemini-'))
     try {
@@ -297,17 +325,39 @@ export class GeminiWebController {
       }
 
       if (files.length > 0) await this.#uploadFiles(win, files)
-      await this.#fillPrompt(win, prompt)
-      const before = await this.#latestResponse(win)
-      // 提交前标记不确定状态；崩溃或超时后不会把半完成的一轮当作干净上下文。
-      this.conversations.set(id, win.webContents.getURL(), true)
-      await this.#send(win)
-      const content = await this.#waitForResponse(win, before)
-      await win.refreshUrl?.()
-      const url = conversationUrl(win.webContents.getURL())
-      if (!url) throw new Error('Gemini 未提供可恢复的对话链接，请关闭临时聊天后重试')
-      this.conversations.set(id, url, false, uploaded)
-      return content
+
+      // 网页端的拒答是概率性的：同一条提示词换个模型或重发一次就能过，所以这里做有限次重试，
+      // 而不是把「我只是一个语言模型」直接交给用户。
+      const attempted = []
+      let refusal = ''
+      let unavailable = null
+      for (let attempt = 0; attempt < chain.length * 2; attempt++) {
+        const candidate = chain[attempt % chain.length]
+        if (!attempted.includes(candidate.name)) attempted.push(candidate.name)
+        try {
+          await this.#selectModel(win, candidate)
+        } catch (error) {
+          if (error?.modelUnavailable) { unavailable ??= error; continue }
+          throw error
+        }
+        if (thinking) await this.#selectThinking(win, thinking)
+        await this.#fillPrompt(win, prompt)
+        const before = await this.#latestResponse(win)
+        // 提交前标记不确定状态；崩溃或超时后不会把半完成的一轮当作干净上下文。
+        this.conversations.set(id, win.webContents.getURL(), true)
+        await this.#send(win)
+        const content = await this.#waitForResponse(win, before)
+        if (!isRefusalReply(content)) {
+          await win.refreshUrl?.()
+          const url = conversationUrl(win.webContents.getURL())
+          if (!url) throw new Error('Gemini 未提供可恢复的对话链接，请关闭临时聊天后重试')
+          this.conversations.set(id, url, false, uploaded)
+          return content
+        }
+        refusal = content
+      }
+      if (refusal) throw new Error(`Gemini 网页连续拒绝了这次请求（已尝试 ${attempted.join('、')}），最后一次回复：${refusal.replace(/\s+/g, ' ').slice(0, 80)}`)
+      throw unavailable || new Error('Gemini 网页上找不到可用的模型，请检查网页端“模式选择器”菜单')
     } finally {
       await rm(tempDir, { recursive: true, force: true }).catch(() => {})
     }
@@ -325,8 +375,25 @@ export class GeminiWebController {
     throw new Error('Gemini 网页加载超时，请检查网络后重试')
   }
 
-  /** Gemini 4 网页版显示名为 Argon。每次提交前确认一次，避免旧对话仍停在 Flash。 */
-  async #selectGemini4(win) {
+  /** 输入框上方的「对话 / 任务」开关；任务模式走的是异步任务流，按所选方案切换。 */
+  async #ensureMode(win, mode) {
+    const switched = await win.webContents.executeJavaScript(`(() => {
+      /* prompt-wizard:chat-mode */
+      const wanted = ${JSON.stringify(mode === 'task' ? ['任务', 'Task'] : ['对话', '聊天', 'Chat'])};
+      const visible = (node) => node && node.getClientRects().length > 0;
+      const target = [...document.querySelectorAll('gem-segmented-button')].filter(visible)
+        .find((node) => wanted.includes((node.innerText || '').trim()));
+      if (!target) return 'absent';
+      if (String(target.className).includes('selected')) return 'selected';
+      (target.querySelector('button') || target).click();
+      return 'switched';
+    })()`).catch(() => 'absent')
+    if (switched === 'switched') await delay(1500)
+    return switched
+  }
+
+  /** 网页端模型名带版本号和副标题，按候选的 includes/excludes 子串匹配来选，别写死版本号。 */
+  async #selectModel(win, candidate) {
     const readCurrent = () => win.webContents.executeJavaScript(`(() => {
       /* prompt-wizard:model-current */
       const button = document.querySelector(${JSON.stringify(MODEL_BUTTON_SELECTOR)});
@@ -335,7 +402,8 @@ export class GeminiWebController {
     })()`).catch(() => ({ found: false, current: '' }))
 
     let state = await readCurrent()
-    if (!state.found || /(?:^|\\s)(?:4\\s*)?Argon(?:\\s|$)/i.test(state.current)) return state.current
+    if (!state.found) return ''
+    if (matchesModel(candidate, state.current)) return state.current
 
     const opened = await win.webContents.executeJavaScript(`(() => {
       /* prompt-wizard:model-open */
@@ -353,29 +421,93 @@ export class GeminiWebController {
         /* prompt-wizard:model-option */
         const visible = (node) => node && node.getClientRects().length > 0;
         const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
-        const options = [...document.querySelectorAll('[data-test-id^="bard-mode-option-"], gem-menu-item, [role="menuitem"], [role="option"]')].filter(visible);
-        const option = options.find((node) => /(?:^|\\s)(?:4\\s*)?Argon(?:\\s|$)/i.test(label(node)))
-          || options.find((node) => /Gemini\\s*4/i.test(label(node)));
+        const options = [...document.querySelectorAll('[data-test-id^="bard-mode-option-"], gem-menu-item, [role="menuitem"], [role="option"], [role="menuitemradio"], [role="radio"]')].filter(visible);
+        const target = ${JSON.stringify({ includes: candidate.includes, excludes: candidate.excludes })};
+        const hit = (text) => {
+          const value = String(text || '').toLowerCase();
+          return target.includes.every((needle) => value.includes(needle.toLowerCase()))
+            && !target.excludes.some((needle) => value.includes(needle.toLowerCase()));
+        };
+        const option = options.find((node) => hit(label(node)));
         if (!option) return { available: false, clicked: false };
         option.click();
         return { available: true, clicked: true, label: label(option) };
       })()`).catch(() => ({ available: false, clicked: false }))
-      available ||= Boolean(selection.available)
-      if (selection.clicked) break
+      available ||= Boolean(selection?.available)
+      if (selection?.clicked) break
       await delay(250)
     }
 
     if (!available) {
-      throw new Error('当前 Gemini 账号的模式菜单中没有 Gemini 4 Argon，请确认账号权限或网页端是否已开放')
+      await this.#closeModelMenu(win)
+      const error = new Error(`当前 Gemini 账号的模式菜单里没有 ${candidate.name} 模型，请确认账号权限或网页端是否已开放`)
+      error.modelUnavailable = true
+      throw error
     }
 
     const confirmDeadline = Date.now() + 10000
     while (Date.now() < confirmDeadline) {
       await delay(300)
       state = await readCurrent()
-      if (/(?:^|\\s)(?:4\\s*)?Argon(?:\\s|$)/i.test(state.current)) return PREFERRED_GEMINI_MODEL
+      if (matchesModel(candidate, state.current)) return state.current
     }
-    throw new Error('已选择 Gemini 4 Argon，但网页没有完成模式切换，请刷新 Gemini 后重试')
+    await this.#closeModelMenu(win)
+    throw new Error(`Gemini 网页没有完成模式切换（目标 ${candidate.name}），请刷新 Gemini 后重试`)
+  }
+
+  /** 思考等级在模式菜单的二级菜单里；只有显式配置了 PW_GEMINI_THINKING 才会动它。 */
+  async #selectThinking(win, level) {
+    if (!(await this.#openModelMenu(win))) return ''
+    const entry = await win.webContents.executeJavaScript(`(() => {
+      /* prompt-wizard:thinking-open */
+      const visible = (node) => node && node.getClientRects().length > 0;
+      const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
+      const item = [...document.querySelectorAll('[role="menuitem"], gem-menu-item')].filter(visible)
+        .find((node) => label(node).startsWith('思考等级'));
+      if (!item) return false;
+      item.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      item.click();
+      return true;
+    })()`).catch(() => false)
+    if (!entry) { await this.#closeModelMenu(win); return '' }
+
+    let current = ''
+    const deadline = Date.now() + 6000
+    while (Date.now() < deadline) {
+      const picked = await win.webContents.executeJavaScript(`(() => {
+        /* prompt-wizard:thinking-option */
+        const visible = (node) => node && node.getClientRects().length > 0;
+        const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
+        const options = [...document.querySelectorAll('[role="menuitemradio"], [role="radio"], [role="menuitem"], gem-menu-item')].filter(visible)
+          .filter((node) => /^(低点|中等|高点)/.test(label(node)));
+        const option = options.find((node) => label(node).startsWith(${JSON.stringify(level)}));
+        if (!option) return { picked: '', already: '' };
+        const already = options.find((node) => String(node.className).includes('selected'));
+        if (already && label(already).startsWith(${JSON.stringify(level)})) return { picked: '', already: label(already) };
+        option.click();
+        return { picked: label(option), already: '' };
+      })()`).catch(() => ({ picked: '', already: '' }))
+      current = picked?.picked || picked?.already || ''
+      if (current || picked?.picked) break
+      await delay(250)
+    }
+    await this.#closeModelMenu(win)
+    return current
+  }
+
+  async #openModelMenu(win) {
+    return win.webContents.executeJavaScript(`(() => {
+      /* prompt-wizard:model-open */
+      const button = document.querySelector(${JSON.stringify(MODEL_BUTTON_SELECTOR)});
+      if (!button) return false;
+      if (button.getAttribute('aria-expanded') !== 'true') button.click();
+      return true;
+    })()`).catch(() => false)
+  }
+
+  async #closeModelMenu(win) {
+    await win.webContents.executeJavaScript('document.body.click()').catch(() => {})
+    await delay(300)
   }
 
   async #loadGemini(win, url = GEMINI_URL) {
@@ -600,6 +732,25 @@ export class GeminiWebController {
     }
     throw new Error(last ? 'Gemini 回复生成超时，可在网页窗口查看未完成内容' : '没有抓取到 Gemini 网页回复')
   }
+}
+
+/** 菜单项的文案里带版本号和副标题，用候选自己的 includes/excludes 子串判断，避免写死版本号。 */
+function matchesModel(candidate, text) {
+  const value = String(text || '').toLowerCase()
+  if (!value) return false
+  if (!candidate.includes.every((needle) => value.includes(String(needle).toLowerCase()))) return false
+  return !candidate.excludes.some((needle) => value.includes(String(needle).toLowerCase()))
+}
+
+/**
+ * 网页端偶尔把「整段固定规则 + 图片」当成看不懂的请求，只回一句短拒答。
+ * 这种回复又短又固定，正好用来触发换模型重试；正常回答不会短到 240 字以内还带这些措辞。
+ */
+function isRefusalReply(text) {
+  const value = String(text || '').trim()
+  if (!value) return true
+  if (value.length > REFUSAL_MAX_LENGTH) return false
+  return REFUSAL_MARKERS.some((marker) => value.includes(marker))
 }
 
 function isGoogleUrl(value) {

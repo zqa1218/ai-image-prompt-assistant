@@ -17,6 +17,13 @@ it('配置持久化且密钥只以密文保存，不回显；校验地址与模�
   try {
     const { readSettings, publicSettings, updateSettings } = await import('./config.mjs')
     expect(publicSettings().model).toBe('deepseek-flash')
+    expect(publicSettings()).toMatchObject({ geminiPlan: 'flash', geminiThinking: '' })
+    expect(publicSettings().plans.map((plan) => plan.id)).toContain('argon')
+    expect(() => updateSettings({ geminiPlan: 'nope' })).toThrow()
+    expect(() => updateSettings({ geminiThinking: '超高' })).toThrow()
+    updateSettings({ geminiPlan: 'argon', geminiThinking: '中等' })
+    expect(publicSettings()).toMatchObject({ geminiPlan: 'argon', geminiThinking: '中等' })
+    updateSettings({ geminiPlan: 'flash', geminiThinking: '' })
     updateSettings({ apiKey: 'test-key-only', mode: 'api' })
     expect(readSettings().apiKey).toBe('test-key-only')
     expect(publicSettings()).toMatchObject({ mode: 'api', hasKey: true, keySource: 'local' })

@@ -2,13 +2,20 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
+import { DEFAULT_PLAN_ID, THINKING_LEVELS, planOptions, resolvePlan } from './gemini-plans.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const PROJECT_ROOT = path.resolve(here, '..')
 
 export const DATA_DIR = process.env.PROMPT_WIZARD_DATA_DIR || path.join(process.env.APPDATA || os.homedir(), 'PromptWizard')
 const settingsPath = path.join(DATA_DIR, 'model-settings.json')
-const defaults = { mode: 'gemini-web', baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com', model: process.env.DEEPSEEK_MODEL || 'deepseek-flash' }
+const defaults = {
+  mode: 'gemini-web',
+  baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+  model: process.env.DEEPSEEK_MODEL || 'deepseek-flash',
+  geminiPlan: process.env.PW_GEMINI_PLAN || DEFAULT_PLAN_ID,
+  geminiThinking: process.env.PW_GEMINI_THINKING || '',
+}
 
 export function readSettings() {
   const stored = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf8')) : {}
@@ -23,6 +30,9 @@ export function readSettings() {
 
 export function publicSettings(settings = readSettings()) {
   return { mode: settings.mode, baseUrl: settings.baseUrl, model: settings.model,
+    geminiPlan: resolvePlan(settings.geminiPlan).id,
+    geminiThinking: THINKING_LEVELS.includes(settings.geminiThinking) ? settings.geminiThinking : '',
+    plans: planOptions(),
     hasKey: Boolean(settings.apiKey), keySource: settings.encryptedKey ? 'local' : settings.apiKey ? 'env' : 'none' }
 }
 
@@ -43,6 +53,14 @@ export function updateSettings(patch) {
   if (patch.model !== undefined) {
     if (typeof patch.model !== 'string' || !patch.model.trim() || patch.model.length > 200) throw new Error('请输入有效的模型 ID')
     next.model = patch.model.trim()
+  }
+  if (patch.geminiPlan !== undefined) {
+    if (typeof patch.geminiPlan !== 'string' || !planOptions().some((plan) => plan.id === patch.geminiPlan)) throw new Error('未知的 Gemini 网页方案')
+    next.geminiPlan = patch.geminiPlan
+  }
+  if (patch.geminiThinking !== undefined) {
+    if (typeof patch.geminiThinking !== 'string' || !THINKING_LEVELS.includes(patch.geminiThinking)) throw new Error('未知的思考等级')
+    next.geminiThinking = patch.geminiThinking
   }
   if (patch.apiKey !== undefined) {
     if (typeof patch.apiKey !== 'string' || patch.apiKey.length > 4096) throw new Error('API Key 格式无效')

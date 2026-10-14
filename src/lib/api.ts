@@ -2,6 +2,11 @@ export type SettingsResponse = {
   mode: 'gemini-web' | 'api'
   baseUrl: string
   model: string
+  /** 网页端方案 ID，见 server/gemini-plans.mjs */
+  geminiPlan: string
+  /** 思考等级：'' = 跟随账号，其余为 低点 / 中等 / 高点 */
+  geminiThinking: string
+  plans: { id: string; label: string; note: string }[]
   hasKey: boolean
   keySource: 'env' | 'local' | 'none'
 }
@@ -68,6 +73,8 @@ export function saveSettings(patch: {
   mode?: 'gemini-web' | 'api'
   baseUrl?: string
   model?: string
+  geminiPlan?: string
+  geminiThinking?: string
   apiKey?: string
 }): Promise<SettingsResponse> {
   return request<SettingsResponse>('/api/settings', {

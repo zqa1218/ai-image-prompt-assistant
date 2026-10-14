@@ -261,7 +261,8 @@ async function handleChat(req, res) {
       error: { message: 'Gemini 网页桥接仅在桌面端可用，请启动桌面版助手' },
     })
   }
-  const content = await bridge.submit(body)
+  // 网页方案（模型尝试链 + 对话/任务 + 思考等级）由设置决定，插件里不再写死 Argon。
+  const content = await bridge.submit({ ...body, geminiPlan: settings.geminiPlan, geminiThinking: settings.geminiThinking })
   return sendJson(res, 200, {
     choices: [{ message: { role: 'assistant', content } }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
