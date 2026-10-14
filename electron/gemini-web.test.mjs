@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const fake = vi.hoisted(() => ({ windows: [], chats: new Map(), next: 0, modelSelections: 0 }))
+const fake = vi.hoisted(() => ({ windows: [], chats: new Map(), next: 0, modelSelections: 0, fileSelectors: [] }))
 // 单元测试里不启动真实浏览器，统一走内嵌窗口分支。
 vi.mock('./cdp-browser.mjs', () => ({
   CdpBrowserSession: class {},
@@ -16,12 +16,27 @@ vi.mock('electron', () => ({
       this.url = ''
       this.loads = []
       this.model = 'Flash'
+      this.menuOpen = false
       this.webContents = {
         setUserAgent() {}, setWindowOpenHandler() {},
         getURL: () => this.url,
         insertText: async () => {},
+        debugger: {
+          isAttached: () => true,
+          attach() {}, on() {}, removeListener() {},
+          sendCommand: async (method, params = {}) => {
+            if (method === 'DOM.getDocument') return { root: { nodeId: 1 } }
+            if (method === 'DOM.querySelectorAll') {
+              fake.fileSelectors.push(params.selector)
+              return { nodeIds: this.menuOpen && params.selector.includes('accept*="image"') ? [2] : [] }
+            }
+            if (method === 'DOM.setFileInputFiles') this.menuOpen = false
+            return {}
+          },
+        },
         sendInputEvent: (event) => {
           if (event.type !== 'mouseUp') return
+          if (event.x === 10) { this.menuOpen = true; return }
           if (!this.url.includes('/app/')) this.url = `https://gemini.google.com/app/test-${++fake.next}`
           fake.chats.set(this.url, (fake.chats.get(this.url) || 0) + 1)
         },
@@ -38,8 +53,10 @@ vi.mock('electron', () => ({
             const count = fake.chats.get(this.url) || 0
             return { count, id: `${this.url}-${count}`, text: count ? '相同回复' : '' }
           }
+          if (script.includes('prompt-wizard:uploaded-files')) return 1
           if (script.includes('Stop response')) return false
           if (script.includes('editor?.value')) return false
+          if (script.includes('上传和工具|添加文件')) return { x: 10, y: 10 }
           if (script.includes('return { rect:')) return { rect: { x: 100, y: 100 } }
           return true
         },
@@ -59,10 +76,15 @@ import { GeminiWebController } from './gemini-web.mjs'
 
 it('控制器只为换图/重开加载新对话；连续相同回复不超时；重启恢复原链接', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'pw-web-controller-test-'))
-  const body = (id) => ({ conversationId: id, messages: [{ role: 'user', content: '测试' }] })
+  const body = (id) => ({ conversationId: id, messages: [{ role: 'user', content: [
+    { type: 'text', text: '测试' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
+  ] }] })
   try {
     const controller = new GeminiWebController({ dataDir: dir })
     expect(await controller.submit(body('image-a'))).toBe('相同回复')
+    expect(fake.fileSelectors[0]).toBe('input[type="file"][accept*="image"]')
+    expect(fake.fileSelectors.length).toBeGreaterThan(1)
     expect(controller.window.model).toBe('Argon')
     expect(fake.modelSelections).toBe(1)
     const firstUrl = controller.window.url

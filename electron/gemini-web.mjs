@@ -10,6 +10,7 @@ import { CdpBrowserSession, findBrowserExecutable } from './cdp-browser.mjs'
 
 const GEMINI_URL = 'https://gemini.google.com/app'
 const EDITOR_SELECTOR = '[contenteditable="true"][role="textbox"], rich-textarea [contenteditable="true"], .ql-editor[contenteditable="true"], textarea'
+const IMAGE_FILE_INPUT_SELECTOR = 'input[type="file"][accept*="image"]'
 const MODEL_BUTTON_SELECTOR = '[data-test-id="bard-mode-menu-button"], bard-mode-switcher button[aria-haspopup="true"], button[aria-label*="模式选择器"], button[aria-label*="model picker" i]'
 const PREFERRED_GEMINI_MODEL = 'Argon'
 /** 点击“登录”万一没跳转，就直接开这个地址，参数与 Gemini 自己用的一致。 */
@@ -411,11 +412,29 @@ export class GeminiWebController {
       })()`)
       if (!addRect) throw new Error('Gemini 网页上找不到“添加文件”按钮')
       await this.#clickAt(win, addRect)
-      await delay(300)
-      if (await this.#setFilesOnPageInput(debuggerApi, files)) {
-        await delay(1500)
-        return
+      let uploadTarget = null
+      const menuDeadline = Date.now() + 8000
+      while (Date.now() < menuDeadline) {
+        // Gemini 4 会同时渲染“文档”和“图片”输入框；只把图片交给 accept=image/* 的那个。
+        if (await this.#setFilesOnPageInput(debuggerApi, files)) {
+          await this.#waitForUploadedFiles(win, files.length)
+          return
+        }
+        uploadTarget = await win.webContents.executeJavaScript(`(() => {
+          const visible = (node) => node && node.getClientRects().length > 0;
+          const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
+          const matchesUpload = (node) => /^(上传文件|从设备上传|Upload files|Upload from device)(?:\\.|$)/i.test(label(node));
+          const upload = [...document.querySelectorAll('[data-test-id="local-images-files-uploader-button"],button,[role="menuitem"],[role="button"],mat-list-item,li')].find((node) => visible(node) && matchesUpload(node))
+            || [...document.querySelectorAll('*')].filter((node) => visible(node) && matchesUpload(node)).sort((a, b) => a.children.length - b.children.length)[0];
+          if (!upload) return null;
+          const target = upload.closest('button,[role="menuitem"],[role="button"],[tabindex]') || upload;
+          const rect = target.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        })()`)
+        if (uploadTarget) break
+        await delay(250)
       }
+      if (!uploadTarget) throw new Error('Gemini 的上传菜单中找不到“上传文件”')
 
       const chooser = new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -440,25 +459,9 @@ export class GeminiWebController {
         debuggerApi.on('message', onMessage)
       })
 
-      const uploadTarget = await win.webContents.executeJavaScript(`(() => {
-        const visible = (node) => node && node.getClientRects().length > 0;
-        const label = (node) => (node.innerText || node.getAttribute('aria-label') || '').trim();
-        const matchesUpload = (node) => /^(上传文件|从设备上传|Upload files|Upload from device)(?:\\.|$)/i.test(label(node));
-        const upload = [...document.querySelectorAll('[data-test-id="local-images-files-uploader-button"],button,[role="menuitem"],[role="button"],mat-list-item,li')].find((node) => visible(node) && matchesUpload(node))
-          || [...document.querySelectorAll('*')].filter((node) => visible(node) && matchesUpload(node)).sort((a, b) => a.children.length - b.children.length)[0];
-        if (upload) {
-          const target = upload.closest('button,[role="menuitem"],[role="button"],[tabindex]') || upload;
-          const rect = target.getBoundingClientRect();
-          return { kind: 'rect', x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-        }
-        const input = document.querySelector('input[type="file"]');
-        if (input) { input.click(); return { kind: 'input' }; }
-        return null;
-      })()`)
-      if (!uploadTarget) throw new Error('Gemini 的上传菜单中找不到“上传文件”')
-      if (uploadTarget.kind === 'rect') await this.#clickAt(win, uploadTarget)
+      await this.#clickAt(win, uploadTarget)
       await chooser
-      await delay(1500)
+      await this.#waitForUploadedFiles(win, files.length)
     } finally {
       await debuggerApi.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => {})
     }
@@ -470,7 +473,7 @@ export class GeminiWebController {
       const { root } = await debuggerApi.sendCommand('DOM.getDocument', { depth: -1, pierce: true })
       const { nodeIds = [] } = await debuggerApi.sendCommand('DOM.querySelectorAll', {
         nodeId: root.nodeId,
-        selector: 'input[type="file"]',
+        selector: IMAGE_FILE_INPUT_SELECTOR,
       })
       if (nodeIds.length === 0) return false
       await debuggerApi.sendCommand('DOM.setFileInputFiles', { files, nodeId: nodeIds[0] })
@@ -478,6 +481,21 @@ export class GeminiWebController {
     } catch {
       return false
     }
+  }
+
+  async #waitForUploadedFiles(win, expected) {
+    const deadline = Date.now() + 30000
+    while (Date.now() < deadline) {
+      const count = await win.webContents.executeJavaScript(`(() => {
+        /* prompt-wizard:uploaded-files */
+        const visible = (node) => node && node.getClientRects().length > 0;
+        const attachments = [...document.querySelectorAll('uploader-file-preview gem-media-attachment')].filter(visible);
+        return attachments.length || [...document.querySelectorAll('uploader-file-preview-container img[alt="attachment"]')].filter(visible).length;
+      })()`).catch(() => 0)
+      if (count >= expected) return
+      await delay(250)
+    }
+    throw new Error('图片已交给 Gemini 网页，但附件预览未在 30 秒内出现，请检查网络后重试')
   }
 
   async #fillPrompt(win, prompt) {
