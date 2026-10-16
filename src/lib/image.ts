@@ -229,3 +229,25 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
+
+/**
+ * 存档列表用的小缩略图：长边 96px 的 JPEG，几十 KB。
+ * 列表里直接放原图 data URL 会让每一次刷新都传好几 MB。
+ */
+export async function makeThumbnail(dataUrl: string, edge = 96): Promise<string> {
+  try {
+    const element = await loadImage(dataUrl)
+    const longest = Math.max(element.naturalWidth, element.naturalHeight)
+    if (!longest) return ''
+    const scale = Math.min(1, edge / longest)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(element.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.round(element.naturalHeight * scale))
+    const context = canvas.getContext('2d')
+    if (!context) return ''
+    context.drawImage(element, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', 0.6)
+  } catch {
+    return ''
+  }
+}

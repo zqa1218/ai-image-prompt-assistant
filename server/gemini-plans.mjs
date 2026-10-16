@@ -1,11 +1,4 @@
-/**
- * Gemini 网页端可选方案。
- *
- * models 是一条「尝试链」：先用第一个模型提交，如果网页端只回一句能力否认（实测 Argon 和 Pro 对
- * 「整段固定规则」这种长提示词会误判），就自动换链上的下一个模型重试，所以每个方案都能拿到有效回答。
- * 实测结论：Flash / Flash-Lite 基本不拒答；Argon、Pro 拒答率高，但换到 Flash 兜底后仍可用。
- * mode：chat = 对话模式；task = 任务模式（网页端要先在 Gemini 里同意「任务」条款才能用）。
- */
+/** 一个方案只对应一个模型和模式；拒答或不可用时直接报告，不降级。 */
 export const MODEL_MATCHERS = {
   Argon: { name: 'Argon', includes: ['Argon'], excludes: [] },
   Pro: { name: 'Pro', includes: ['Pro'], excludes: [] },
@@ -14,10 +7,11 @@ export const MODEL_MATCHERS = {
 }
 
 export const GEMINI_PLANS = [
-  { id: 'flash', mode: 'chat', models: ['Flash', 'Flash-Lite'], label: '3.8 Flash · 对话', note: '默认：实测最稳，一般 1~3 分钟出结果' },
-  { id: 'lite', mode: 'chat', models: ['Flash-Lite', 'Flash'], label: '3.5 Flash-Lite · 对话', note: '最快，实测 7~11 秒出结果' },
-  { id: 'pro', mode: 'chat', models: ['Pro', 'Flash', 'Flash-Lite'], label: '3.1 Pro · 对话', note: '推理更强；Pro 常被误判拒答，会自动换 Flash 兜底，可能要几分钟' },
-  { id: 'argon', mode: 'chat', models: ['Argon', 'Flash', 'Flash-Lite'], label: '4 Argon · 对话', note: '最先进；长规则常被拒答，实测约 4 分钟拿到结果（Argon → Flash → Flash-Lite）' },
+  { id: 'flash', mode: 'chat', model: 'Flash', label: '3.8 Flash · 对话', note: '仅使用 Flash，对话模式' },
+  { id: 'lite', mode: 'chat', model: 'Flash-Lite', label: '3.5 Flash-Lite · 对话', note: '仅使用 Flash-Lite，对话模式' },
+  { id: 'pro', mode: 'chat', model: 'Pro', label: '3.1 Pro · 对话', note: '仅使用 Pro，对话模式' },
+  { id: 'argon', mode: 'chat', model: 'Argon', label: '4 Argon · 对话', note: '仅使用 Argon，对话模式' },
+  { id: 'argon-task', mode: 'task', model: 'Argon', label: '4 Argon · 任务', note: '用户实测短文本提示词生成有效且响应快；图片与长模板效果待验证' },
 ]
 
 export const DEFAULT_PLAN_ID = 'flash'
@@ -27,10 +21,18 @@ export function planOptions() {
   return GEMINI_PLANS.map(({ id, label, note }) => ({ id, label, note }))
 }
 
-export function resolvePlan(id) {
-  return GEMINI_PLANS.find((plan) => plan.id === id)
-    || GEMINI_PLANS.find((plan) => plan.id === DEFAULT_PLAN_ID)
-    || GEMINI_PLANS[0]
+export function resolvePlan(id = DEFAULT_PLAN_ID) {
+  const plan = GEMINI_PLANS.find((plan) => plan.id === id)
+  if (!plan) throw new Error('未知的 Gemini 网页方案，请重新选择')
+  return plan
+}
+
+/**
+ * 设置文件里存了未知方案（手改过、或来自更早的版本）时回退到默认方案。
+ * 提交时仍然严格校验，这里只用于把界面拉回一个可用状态。
+ */
+export function coercePlanId(id) {
+  return GEMINI_PLANS.some((plan) => plan.id === id) ? id : DEFAULT_PLAN_ID
 }
 
 export function modelMatcher(name) {

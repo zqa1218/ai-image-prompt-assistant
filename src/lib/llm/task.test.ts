@@ -105,6 +105,18 @@ describe('需求与规则拼装', () => {
 })
 
 describe('输出要求', () => {
+  /** 网页端（Gemini 4）在带图消息里读到「修图/置入」就容易改成生成图片。 */
+  it('每个阶段的输出要求都先声明只输出文字', () => {
+    for (const id of ['analyze', 'direction', 'compose']) {
+      const task = buildStageTask(baseInput({ stage: stage(id) }))
+      expect(task).toContain('只输出文字结果：不要生成、创建或编辑图片')
+    }
+    const extract = buildExtractTask(
+      baseInput({ images: [{ ...image('chair.png', 'reference') }] }),
+    )
+    expect(extract).toContain('只输出文字结果：不要生成、创建或编辑图片')
+  })
+
   it('JSON 输出要求里必须出现 json 字样（DeepSeek 的硬性要求）', () => {
     for (const id of ['direction', 'compose']) {
       const task = buildStageTask(baseInput({ stage: stage(id) }))

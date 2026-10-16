@@ -19,8 +19,8 @@ export class ConversationStore {
     const entry = this.entries[id]
     return entry && !entry.dirty && conversationUrl(entry.url) ? entry : null
   }
-  set(id, url, dirty = false, images = {}) {
-    this.entries[id] = { url: conversationUrl(url), dirty, images }
+  set(id, url, dirty = false, images = {}, plan = '') {
+    this.entries[id] = { url: conversationUrl(url), dirty, images, plan }
     this.save()
   }
   reset(id) {

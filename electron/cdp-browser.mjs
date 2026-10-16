@@ -100,7 +100,13 @@ class CdpConnection {
     if (this.closed) return Promise.reject(new Error('浏览器调试连接已断开'))
     const id = (this.sequence += 1)
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+        // 调试端口偶尔不回复（页面正忙或正在跳转）；没有超时会把整次提交挂死。
+        const timer = setTimeout(() => {
+          this.pending.delete(id)
+          reject(new Error(`浏览器调试命令超时：${method}`))
+        }, 60000)
+        const finish = (callback) => (value) => { clearTimeout(timer); callback(value) }
+        this.pending.set(id, { resolve: finish(resolve), reject: finish(reject) })
       this.socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
     })
   }
@@ -137,11 +143,23 @@ class CdpConnection {
   }
 }
 
-/** Ctrl/Cmd 之外只用到回车，够 Gemini 发送用了。 */
+/** 只认回车和 Esc 两个键；别的键原样透传，别偷偷退化成回车。 */
+const NAMED_KEYS = {
+  Enter: { code: 'Enter', virtualKeyCode: 13, text: '\r' },
+  Escape: { code: 'Escape', virtualKeyCode: 27, text: '' },
+}
+
 function keyEventParams(event) {
-  const name = String(event.keyCode || event.key || '')
-  const params = { type: event.type === 'keyUp' ? 'keyUp' : 'keyDown', key: name, windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, code: 'Enter' }
-  if (event.type !== 'keyUp') params.text = '\r'
+  const name = String(event.keyCode || event.key || 'Enter')
+  const known = NAMED_KEYS[name]
+  const params = {
+    type: event.type === 'keyUp' ? 'keyUp' : 'keyDown',
+    key: name,
+    code: known?.code ?? name,
+    windowsVirtualKeyCode: known?.virtualKeyCode ?? 0,
+    nativeVirtualKeyCode: known?.virtualKeyCode ?? 0,
+  }
+  if (event.type !== 'keyUp' && known?.text) params.text = known.text
   return params
 }
 
@@ -284,6 +302,10 @@ export class CdpBrowserSession {
   async #prepare() {
     await this.send('Page.enable')
     await this.send('Runtime.enable')
+    // 浏览器窗口被挡在后面或最小化时，页面是 document.visibilityState === 'hidden'，
+    // Chrome 会直接丢掉合成的鼠标/键盘事件（菜单点不开、内容写不进输入框）。
+    // 打开焦点模拟后页面保持可交互，用户不必把 Gemini 窗口摆到最前面。
+    await this.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {})
     await this.sendBrowser('Target.activateTarget', { targetId: this.targetId }).catch(() => {})
     // 标签页可能还停在 about:blank，等它落到真实地址，避免上层误判成“没登录”。
     const deadline = Date.now() + 8000

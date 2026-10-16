@@ -88,7 +88,7 @@ export default function SettingsPage() {
         <div>
           <h2 className="text-sm font-semibold">Gemini 网页连接</h2>
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            不使用 Gemini API 或 API Key。助手会打开一个独立的真实 Chrome 窗口，自动切换到 Gemini 4 Argon，上传图片、提交绑定后的语言模板并抓取回复。
+            不使用 Gemini API 或 API Key。助手会打开独立的 Chrome 窗口，使用顶部所选模型和模式，上传图片、提交需求并抓取回复。失败时保留原因，不自动更换模型。
           </p>
         </div>
 

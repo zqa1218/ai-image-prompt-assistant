@@ -23,3 +23,28 @@ export function toggleMulti(value: string | undefined, option: string): string {
 export function formatMulti(value: string | undefined): string {
   return parseMulti(value).join('、')
 }
+
+/**
+ * 全选 / 取消全选一个多选字段。
+ * 只增删本字段的选项，其它字段留下的值不受影响（同一 key 下不会出现重复项）。
+ */
+export function setMultiAll(
+  value: string | undefined,
+  options: readonly string[],
+  on: boolean,
+): string {
+  const current = parseMulti(value)
+  if (!on) return current.filter((item) => !options.includes(item)).join(SEPARATOR)
+  const merged = [...current]
+  for (const option of options) {
+    if (!merged.includes(option)) merged.push(option)
+  }
+  return merged.join(SEPARATOR)
+}
+
+/** 本字段是否已经全部勾选，用于把「全选」按钮切成「取消全选」。 */
+export function isAllSelected(value: string | undefined, options: readonly string[]): boolean {
+  if (options.length === 0) return false
+  const current = parseMulti(value)
+  return options.every((option) => current.includes(option))
+}

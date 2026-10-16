@@ -1,9 +1,10 @@
 import ImageDropzone from '../components/ImageDropzone.tsx'
 import PhotoshopImportButton from '../components/PhotoshopImportButton.tsx'
+import ArchivePanel from '../components/ArchivePanel.tsx'
 import type { ResolvedDirective } from '../lib/directives.ts'
 import { visibleFields } from '../lib/fields.ts'
 import { formatBytes, mimeOf } from '../lib/image.ts'
-import { parseMulti, toggleMulti } from '../lib/multiValue.ts'
+import { isAllSelected, parseMulti, setMultiAll, toggleMulti } from '../lib/multiValue.ts'
 import { imageLabel, type ImageRef, type WizardImage } from '../lib/wizardTypes.ts'
 import type { WorkflowStage } from '../workflows/types.ts'
 
@@ -34,6 +35,8 @@ export default function IntakeStage({
 
   return (
     <div className="space-y-6">
+      <ArchivePanel />
+
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">
           原图
@@ -93,10 +96,39 @@ export default function IntakeStage({
         {fields.map((field) =>
           field.kind === 'multi' ? (
             <fieldset key={field.key} className="space-y-2">
-              <legend className="flex items-baseline gap-2 text-sm font-medium">
+              <legend className="flex w-full items-baseline gap-2 text-sm font-medium">
                 {field.label}
                 {field.required && <span className="text-xs text-red-500">必填</span>}
                 <span className="text-xs font-normal text-neutral-400">可多选</span>
+                {(field.options?.length ?? 0) > 1 && (
+                  <span className="ml-auto flex gap-2 font-normal">
+                    <button
+                      type="button"
+                      className={miniBtn}
+                      onClick={() =>
+                        onIntake(
+                          field.key,
+                          setMultiAll(
+                            intake[field.key],
+                            field.options ?? [],
+                            !isAllSelected(intake[field.key], field.options ?? []),
+                          ),
+                        )
+                      }
+                    >
+                      {isAllSelected(intake[field.key], field.options ?? []) ? '取消全选' : '全选'}
+                    </button>
+                    {parseMulti(intake[field.key]).length > 0 && (
+                      <button
+                        type="button"
+                        className={miniBtn}
+                        onClick={() => onIntake(field.key, setMultiAll(intake[field.key], field.options ?? [], false))}
+                      >
+                        清空
+                      </button>
+                    )}
+                  </span>
+                )}
               </legend>
               <div className="flex flex-wrap gap-2">
                 {field.options?.map((option) => {
@@ -118,13 +150,21 @@ export default function IntakeStage({
               </div>
             </fieldset>
           ) : (
-            <label key={field.key} className="block space-y-1.5">
-              <span className="flex items-baseline gap-2 text-sm font-medium">
+            <div key={field.key} className="space-y-1.5">
+              {/* 用 htmlFor 显式绑定而不是用 label 包住控件：包住时点击标签的
+                  转发依赖浏览器默认行为，窗口焦点异常时会点不进去，用户就会
+                  觉得「修图需求打不了字」。 */}
+              <label
+                htmlFor={`intake-${field.key}`}
+                className="flex cursor-text items-baseline gap-2 text-sm font-medium"
+              >
                 {field.label}
                 {field.required && <span className="text-xs text-red-500">必填</span>}
-              </span>
+              </label>
               {field.kind === 'select' ? (
                 <select
+                  id={`intake-${field.key}`}
+                  data-intake-field={field.key}
                   value={intake[field.key] ?? ''}
                   onChange={(e) => onIntake(field.key, e.target.value)}
                   className={inputClass}
@@ -138,6 +178,8 @@ export default function IntakeStage({
                 </select>
               ) : field.kind === 'textarea' ? (
                 <textarea
+                  id={`intake-${field.key}`}
+                  data-intake-field={field.key}
                   rows={3}
                   value={intake[field.key] ?? ''}
                   placeholder={field.placeholder}
@@ -146,13 +188,15 @@ export default function IntakeStage({
                 />
               ) : (
                 <input
+                  id={`intake-${field.key}`}
+                  data-intake-field={field.key}
                   value={intake[field.key] ?? ''}
                   placeholder={field.placeholder}
                   onChange={(e) => onIntake(field.key, e.target.value)}
                   className={inputClass}
                 />
               )}
-            </label>
+            </div>
           ),
         )}
       </section>
@@ -254,3 +298,7 @@ const chipClass =
   'peer-focus-visible:ring-2 peer-focus-visible:ring-sky-400 ' +
   'dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-neutral-500 ' +
   'dark:peer-checked:border-neutral-100 dark:peer-checked:bg-neutral-100 dark:peer-checked:text-neutral-900'
+
+const miniBtn =
+  'rounded-md border border-neutral-300 px-2 py-0.5 text-xs hover:bg-neutral-100 ' +
+  'dark:border-neutral-700 dark:hover:bg-neutral-800'

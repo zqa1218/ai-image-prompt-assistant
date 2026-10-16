@@ -4,6 +4,7 @@ import SettingsPage from './pages/SettingsPage.tsx'
 import WizardPage from './pages/WizardPage.tsx'
 import { applyProviderMode, useProviderMode } from './lib/providerMode.ts'
 import TransportSwitch from './components/TransportSwitch.tsx'
+import ConfirmDialog from './components/ConfirmDialog.tsx'
 
 type Tab = 'wizard' | 'assets' | 'settings'
 
@@ -40,6 +41,8 @@ export default function App() {
         {tab === 'assets' && <AssetsPage />}
         {tab === 'wizard' && <WizardPage />}
       </main>
+
+      <ConfirmDialog />
     </div>
   )
 }

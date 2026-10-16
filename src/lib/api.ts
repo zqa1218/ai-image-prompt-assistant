@@ -142,3 +142,50 @@ export function capturePhotoshopImage(role: 'original' | 'reference', index = -1
     body: JSON.stringify({ role, index }),
   })
 }
+
+/** 存档列表项：只带缩略图与统计，不带图片本体。 */
+export type ArchiveMeta = {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt?: string
+  workflowId: string
+  imageCount: number
+  hasOriginal: boolean
+  bytes: number
+  thumb: string
+}
+
+/** 一份完整存档：含底图与参考图的 data URL。 */
+export type ArchiveRecord = ArchiveMeta & {
+  intake: Record<string, string>
+  original: import('./wizardTypes.ts').ImageRef | null
+  references: import('./wizardTypes.ts').ImageRef[]
+}
+
+export function listArchives(): Promise<{ archives: ArchiveMeta[] }> {
+  return request<{ archives: ArchiveMeta[] }>('/api/archives')
+}
+
+export function getArchive(id: string): Promise<{ archive: ArchiveRecord }> {
+  return request<{ archive: ArchiveRecord }>(`/api/archives/${encodeURIComponent(id)}`)
+}
+
+export function saveArchiveToDisk(payload: {
+  id?: string
+  name: string
+  workflowId: string
+  intake: Record<string, string>
+  original: import('./wizardTypes.ts').ImageRef | null
+  references: import('./wizardTypes.ts').ImageRef[]
+  thumb?: string
+}): Promise<{ archive: ArchiveMeta }> {
+  return request<{ archive: ArchiveMeta }>('/api/archives', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteArchiveFromDisk(id: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/archives/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}

@@ -2,7 +2,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
-import { DEFAULT_PLAN_ID, THINKING_LEVELS, planOptions, resolvePlan } from './gemini-plans.mjs'
+import {
+  DEFAULT_PLAN_ID,
+  THINKING_LEVELS,
+  coercePlanId,
+  planOptions,
+} from './gemini-plans.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const PROJECT_ROOT = path.resolve(here, '..')
@@ -30,7 +35,7 @@ export function readSettings() {
 
 export function publicSettings(settings = readSettings()) {
   return { mode: settings.mode, baseUrl: settings.baseUrl, model: settings.model,
-    geminiPlan: resolvePlan(settings.geminiPlan).id,
+    geminiPlan: coercePlanId(settings.geminiPlan),
     geminiThinking: THINKING_LEVELS.includes(settings.geminiThinking) ? settings.geminiThinking : '',
     plans: planOptions(),
     hasKey: Boolean(settings.apiKey), keySource: settings.encryptedKey ? 'local' : settings.apiKey ? 'env' : 'none' }

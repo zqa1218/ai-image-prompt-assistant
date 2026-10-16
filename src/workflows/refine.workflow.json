@@ -121,6 +121,7 @@
             "局部替换",
             "人像局部修改",
             "头发精修",
+            "厚涂修发",
             "局部重绘 / 选区修复",
             "半合成置景",
             "增加特效",
@@ -131,6 +132,15 @@
             "置入物体",
             "风格迁移"
           ]
+        },
+        {
+          "key": "hairMode",
+          "label": "厚涂修发模式",
+          "kind": "select",
+          "required": false,
+          "defaultValue": "参考适配设计",
+          "showWhen": { "field": "taskType", "includes": "厚涂修发" },
+          "options": ["参考适配设计", "参考严格复刻", "已有结果局部优化", "自由设计"]
         },
         {
           "key": "editRegion",

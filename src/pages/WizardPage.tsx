@@ -1,5 +1,8 @@
 import Stepper from '../components/Stepper.tsx'
 import UsageBar from '../components/UsageBar.tsx'
+import ArchivePanel from '../components/ArchivePanel.tsx'
+import { confirmAction } from '../lib/confirmDialog.ts'
+import { focusIntakeRequirement } from '../lib/intakeFocus.ts'
 import { resolveDirectives } from '../lib/directives.ts'
 import {
   selectedOption,
@@ -57,8 +60,13 @@ export default function WizardPage() {
         </div>
         <button
           type="button"
-          onClick={() => {
-            if (confirm('重新开始会清空当前进度，确定吗？')) state.reset()
+          onClick={async () => {
+            const ok = await confirmAction({
+              title: '换一条线？',
+              message: '重新开始会清空当前进度，已保存的存档不受影响。',
+              confirmLabel: '重新开始',
+            })
+            if (ok) state.reset()
           }}
           className="shrink-0 rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
@@ -115,13 +123,15 @@ export default function WizardPage() {
           <>
             <button
               type="button"
-              onClick={() => {
-                if (
-                  confirm(
-                    '开始下一张图？会清空当前的底图与产出（修图需求保留），确定吗？',
-                  )
-                )
-                  state.nextRound()
+              onClick={async () => {
+                const ok = await confirmAction({
+                  title: '开始下一张图？',
+                  message: '会清空当前的底图与产出，修图需求保留，接着改就行。',
+                  confirmLabel: '下一张图',
+                })
+                if (!ok) return
+                state.nextRound()
+                focusIntakeRequirement()
               }}
               className={primaryBtn}
             >
@@ -130,13 +140,15 @@ export default function WizardPage() {
             {state.references.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  if (
-                    confirm(
-                      '开始下一张图并沿用当前参考图？会清空底图与产出，确定吗？',
-                    )
-                  )
-                    state.nextRound(true)
+                onClick={async () => {
+                  const ok = await confirmAction({
+                    title: '开始下一张图并沿用当前参考图？',
+                    message: '会清空底图与产出，修图需求与参考图都保留。',
+                    confirmLabel: '沿用参考图',
+                  })
+                  if (!ok) return
+                  state.nextRound(true)
+                  focusIntakeRequirement()
                 }}
                 className={secondaryBtn}
               >
@@ -287,6 +299,7 @@ function WorkflowPicker({ onPick }: { onPick: (id: string) => void }) {
           </button>
         ))}
       </div>
+      <ArchivePanel />
     </div>
   )
 }

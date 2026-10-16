@@ -4,6 +4,8 @@ import { useWizard } from '../lib/wizardStore.ts'
 import { useProviderMode } from '../lib/providerMode.ts'
 import { imageConversationId } from '../lib/imageConversation.ts'
 import { resetGeminiConversation } from '../lib/api.ts'
+import { confirmAction } from '../lib/confirmDialog.ts'
+import { focusIntakeRequirement } from '../lib/intakeFocus.ts'
 
 export default function TransportSwitch({ openSettings }: { openSettings: () => void }) {
   const { settings, saving, error, refresh, save } = useTransport()
@@ -17,12 +19,19 @@ export default function TransportSwitch({ openSettings }: { openSettings: () => 
   const locked = busy || saving || resetting
 
   async function reset() {
-    if (!window.confirm('为这张底图重开 Gemini 对话？旧对话不会删除。保留图片、需求与用户补充，清除模型旧分析和提示词，回到接收步骤重新分析。')) return
+    const ok = await confirmAction({
+      title: '为这张底图重开 Gemini 对话？',
+      message:
+        '旧对话不会删除。保留图片、需求与用户补充，清除模型旧分析和提示词，回到接收步骤重新分析。',
+      confirmLabel: '重开对话',
+    })
+    if (!ok) return
     setResetting(true)
     try {
       await resetGeminiConversation(await imageConversationId(original))
       useWizard.getState().restartModelContext()
       setNotice('已清除模型旧结论，下一次分析会新建对话。')
+      focusIntakeRequirement()
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)) }
     finally { setResetting(false) }
   }
@@ -68,7 +77,7 @@ export default function TransportSwitch({ openSettings }: { openSettings: () => 
     <p className="text-xs text-neutral-600 dark:text-neutral-400" role="status">
       {saving ? '正在保存模式…' : demo ? '当前为演示模式，不会调用网页或 API。请在设置中关闭演示。' : '两种模式共用已接入的 Skill；网页按底图复用对话。发送期间不能切换。'}
     </p>
-    {settings?.mode === 'gemini-web' && planNote && <p className="text-xs text-neutral-500 dark:text-neutral-400">{planNote}。网页端误判拒答时会沿方案里的模型链自动重试。</p>}
+    {settings?.mode === 'gemini-web' && planNote && <p className="text-xs text-neutral-500 dark:text-neutral-400">{planNote}。只使用所选方案，失败时显示原因。</p>}
     {(error || notice) && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">{error || notice}</p>}
   </section>
 }

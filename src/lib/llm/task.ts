@@ -1,4 +1,5 @@
 import type { ResolvedDirective } from '../directives.ts'
+import { hairTask, HAIR_OUTPUT, usesPaintedHair } from './hairTask.ts'
 import { visibleFields } from '../fields.ts'
 import type {
   Artifact,
@@ -38,6 +39,16 @@ const FIELD_LABELS: Record<string, string> = {
   effectSource: '特效发生源/方向',
   outputMode: '交付形式',
 }
+
+/**
+ * 每个阶段都要显式声明「只要文字」。
+ *
+ * 网页端（Gemini 4）在带图消息里读到「置入 / 迁移 / 修图」这类字样时，
+ * 容易直接开始生成图片而不是作答；这条约束同时覆盖网页端和 API 端。
+ */
+const TEXT_ONLY_RULE =
+  '只输出文字结果：不要生成、创建或编辑图片，也不要调用图像生成能力；' +
+  '随消息附带的图片只作为你阅读的信息。'
 
 /** 只把多选值里的逗号换成顿号，便于模型阅读。 */
 function humanize(value: string): string {
@@ -146,7 +157,8 @@ export function buildStageTask(input: TaskInput): string {
     )
   }
 
-  blocks.push(`## 输出要求\n${outputRequirement(input)}`)
+  if (usesPaintedHair(input)) blocks.push(hairTask(input))
+  blocks.push(`## 输出要求\n${TEXT_ONLY_RULE}\n${outputRequirement(input)}`)
 
   return blocks.join('\n\n')
 }
@@ -175,6 +187,7 @@ function outputRequirement(input: TaskInput): string {
   }
 
   if (stage.id === 'compose') {
+    if (usesPaintedHair(input)) return HAIR_OUTPUT
     const extra =
       workflow.outputContract === 'mj-prompt-en'
         ? '（1）中文方向说明（2）英文 Midjourney 提示词（3）参数矩阵清单（4）提交前 QA 清单'
@@ -265,6 +278,7 @@ export function buildExtractTask(input: TaskInput): string {
 
   blocks.push(
     '## 输出要求\n' +
+      `${TEXT_ONLY_RULE}\n` +
       '只输出一个 json 对象，结构如下：\n' +
       '{"items":[{"category":"背景","label":"短标题","description":"可迁移的具体描述","source":"参考图1"}]}\n' +
       '规则：\n' +
@@ -277,5 +291,6 @@ export function buildExtractTask(input: TaskInput): string {
       '不要输出 json 之外的任何文字。',
   )
 
+  if (usesPaintedHair(input)) blocks.push(hairTask(input, true))
   return blocks.join('\n\n')
 }

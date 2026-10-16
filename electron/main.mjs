@@ -57,6 +57,10 @@ if (!app.requestSingleInstanceLock()) {
       webPreferences: { contextIsolation: true, sandbox: true },
     })
     window.removeMenu()
+    // Windows 上原生模态框（alert/confirm）关闭后偶尔不把键盘焦点还给页面，
+    // 表现是「点得动但打不了字」。渲染进程里已经禁用原生对话框，这里再兜一层：
+    // 窗口每次重新拿到焦点，就把键盘焦点交回页面。
+    window.on('focus', () => window?.webContents.focus())
     window.webContents.setWindowOpenHandler(({ url }) => {
       if (url.startsWith('https://')) void shell.openExternal(url)
       return { action: 'deny' }

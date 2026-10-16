@@ -21,6 +21,66 @@ beforeEach(() => {
 })
 
 describe('六步状态机', () => {
+
+  it('参考图拆解失败会说明原因，不静默当成没有可迁移项', async () => {
+    setProvider({
+      ...MOCK_PROVIDER,
+      async extractReferences() {
+        throw new Error('Gemini 把这次请求误判成「生成图片」，已停止这次生成')
+      },
+    })
+    api().start('refine')
+    fillIntake()
+    api().addReference({
+      name: 'ref.png',
+      dataUrl: 'data:image/png;base64,AA',
+      width: 400,
+      height: 400,
+      bytes: 10,
+    })
+
+    await api().advance()
+
+    expect(api().records['analyze']?.status).toBe('ready')
+    expect(api().referenceItems).toEqual([])
+    expect(api().notice).toContain('参考图拆解没成功')
+    expect(api().notice).toContain('误判成「生成图片」')
+  })
+
+  it('载入存档：需求、底图、参考图一起换好，旧产出作废', () => {
+    api().start('refine')
+    fillIntake('旧需求')
+    useWizard.setState({
+      records: { analyze: { status: 'ready', output: '旧分析' } },
+      artifact: { prompt: '旧提示词', channel: 'test' },
+    })
+
+    const ok = api().applyArchive({
+      name: '人像白底',
+      workflowId: 'refine',
+      intake: { requirement: '保持人物完全不变，只换背景', preserve: '人物身份与脸,服装与道具' },
+      original: { name: 'new.png', dataUrl: 'data:image/png;base64,AA', width: 800, height: 600, bytes: 1 },
+      references: [{ name: 'ref.png', dataUrl: 'data:image/png;base64,AA', width: 400, height: 400, bytes: 1 }],
+    })
+
+    expect(ok).toBe(true)
+    expect(api().intake.requirement).toContain('只换背景')
+    expect(api().intake.preserve).toBe('人物身份与脸,服装与道具')
+    expect(api().original?.name).toBe('new.png')
+    expect(api().references).toHaveLength(1)
+    expect(api().references[0].role).toBe('reference')
+    expect(api().records).toEqual({})
+    expect(api().artifact).toBeNull()
+    expect(api().stageIndex).toBe(0)
+  })
+
+  it('存档里的工作路径不存在时不落一半状态', () => {
+    api().start('refine')
+    const ok = api().applyArchive({ workflowId: 'ghost', intake: {}, original: null, references: [] })
+    expect(ok).toBe(false)
+    expect(api().workflowId).toBe('refine')
+  })
+
   it('重开污染会话时保留原始用户输入，清除模型衍生结论', () => {
     api().start('refine')
     fillIntake('只改岩石')

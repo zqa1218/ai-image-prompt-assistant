@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getWorkflow } from '../workflows/index.ts'
+import { getWorkflow, WORKFLOWS } from '../workflows/index.ts'
 import type { Workflow } from '../workflows/types.ts'
 import { deepseekProvider } from './deepseekProvider.ts'
 import { mockProvider } from './mockProvider.ts'
@@ -55,6 +55,8 @@ export type WizardState = {
   busy: boolean
 
   start: (workflowId: string) => void
+  /** 载入一份存档：需求、底图、参考图一次换好，产出全部作废。 */
+  applyArchive: (snapshot: ArchiveSnapshot) => boolean
   reset: () => void
   restartModelContext: () => void
   /** 一张图做完后开下一组：回到接收步骤，清空底图与产出，需求保留。 */
@@ -70,6 +72,15 @@ export type WizardState = {
   selectOption: (id: string) => void
   addNote: (text: string) => Promise<string | null>
   sendFeedback: (text: string) => Promise<void>
+}
+
+/** 保存/载入一份接收阶段配置时用到的字段。 */
+export type ArchiveSnapshot = {
+  name?: string
+  workflowId: string
+  intake: Record<string, string>
+  original: ImageRef | null
+  references: ImageRef[]
 }
 
 const initial = {
@@ -185,11 +196,13 @@ export const useWizard = create<WizardState>()((set, get) => {
 
         // 有参考图时顺带拆解出可迁移项。拆解失败不该把已经成功的分析一起判失败。
         let items: ReferenceItem[] = []
+        let extractError = ''
         if (ctx.images.some((image) => image.role === 'reference')) {
           try {
             items = await provider.extractReferences(ctx)
-          } catch {
+          } catch (error) {
             items = []
+            extractError = error instanceof Error ? error.message : String(error)
           }
         }
         // 显式标注类型：条件表达式里的字面量会被拓宽成 string，导致不符合 StageRecord
@@ -199,6 +212,10 @@ export const useWizard = create<WizardState>()((set, get) => {
           busy: false,
           referenceItems: items,
           selectedReferenceItems: [],
+          // 拆解失败以前是静默的：用户只会看到底图分析好了，却不知道参考图没被读。
+          notice: extractError
+            ? `参考图拆解没成功：${extractError}。可以继续，只是不会自动列出可迁移项。`
+            : s.notice,
           records: {
             ...s.records,
             analyze: { status: 'ready', output: text },
@@ -256,6 +273,35 @@ export const useWizard = create<WizardState>()((set, get) => {
         if (field.defaultValue !== undefined) intake[field.key] = field.defaultValue
       }
       set({ ...initial, workflowId, intake })
+    },
+
+    /**
+     * 载入存档：整份配置一次换好，产出全部作废，回到第 1 步。
+     * 工作流定义缺失（存档来自更早的版本且该线已被删掉）时不落一半状态。
+     */
+    applyArchive(snapshot) {
+      const workflow = WORKFLOWS.find((item) => item.id === snapshot.workflowId)
+      if (!workflow) {
+        set({ notice: '这份存档的工作路径在当前版本里不存在，没有载入。' })
+        return false
+      }
+      const intakeStage = workflow.stages.find((stage) => stage.id === 'intake')
+      const intake: Record<string, string> = {}
+      for (const field of intakeStage?.fields ?? []) {
+        if (field.defaultValue !== undefined) intake[field.key] = field.defaultValue
+      }
+      for (const [key, value] of Object.entries(snapshot.intake ?? {})) {
+        if (typeof value === 'string') intake[key] = value
+      }
+      set({
+        ...initial,
+        workflowId: workflow.id,
+        intake,
+        original: snapshot.original ? { ...snapshot.original, role: 'original' } : null,
+        references: (snapshot.references ?? []).map(withReference),
+        notice: `已载入存档「${snapshot.name ?? '未命名'}」：需求、底图与参考图都换好了，点「开始分析」继续。`,
+      })
+      return true
     },
 
     reset() {

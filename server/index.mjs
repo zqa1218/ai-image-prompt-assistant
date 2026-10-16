@@ -5,6 +5,13 @@ import path from 'node:path'
 import { sendJson, sendText, joinUrl, upstreamHeaders, normalizeUpstreamError } from './deepseek.mjs'
 import { PROJECT_ROOT, publicSettings, readSettings, updateSettings } from './config.mjs'
 import {
+  ArchiveError,
+  deleteArchive,
+  listArchives,
+  readArchive,
+  saveArchive,
+} from './archives.mjs'
+import {
   attachPhotoshopBridge,
   captureFromPhotoshop,
   photoshopStatus,
@@ -76,6 +83,10 @@ async function handle(req, res) {
     return sendJson(res, 415, { error: { message: '仅接受 JSON 请求' } })
   }
 
+  if (url.pathname === '/api/archives' || url.pathname.startsWith('/api/archives/')) {
+    return handleArchives(req, res, url)
+  }
+
   switch (route) {
     case 'GET /api/health':
       return sendJson(res, 200, { ok: true })
@@ -123,6 +134,32 @@ async function handle(req, res) {
 
     default:
       return sendJson(res, 404, { error: { message: `未知路由 ${route}` } })
+  }
+}
+
+/**
+ * 配置存档：GET 列表 / GET 单份 / POST 保存（同名覆盖靠带 id 的 POST）/ DELETE 删除。
+ * 存档落在本机数据目录，只有本机助手页面能访问。
+ */
+async function handleArchives(req, res, url) {
+  const id = decodeURIComponent(url.pathname.slice('/api/archives'.length).replace(/^\/+/, ''))
+  try {
+    if (req.method === 'GET' && !id) return sendJson(res, 200, { archives: listArchives() })
+    if (req.method === 'GET') {
+      const archive = readArchive(id)
+      if (!archive) return sendJson(res, 404, { error: { message: '存档不存在或已被删除' } })
+      return sendJson(res, 200, { archive })
+    }
+    if (req.method === 'POST' && !id) {
+      return sendJson(res, 200, { archive: saveArchive(await readJsonBody(req)) })
+    }
+    if (req.method === 'DELETE' && id) {
+      return sendJson(res, 200, { ok: deleteArchive(id) })
+    }
+    return sendJson(res, 405, { error: { message: `不支持的存档请求 ${req.method} ${url.pathname}` } })
+  } catch (error) {
+    const status = error instanceof ArchiveError ? 400 : 500
+    return sendJson(res, status, { error: { message: describe(error) } })
   }
 }
 
@@ -261,7 +298,7 @@ async function handleChat(req, res) {
       error: { message: 'Gemini 网页桥接仅在桌面端可用，请启动桌面版助手' },
     })
   }
-  // 网页方案（模型尝试链 + 对话/任务 + 思考等级）由设置决定，插件里不再写死 Argon。
+  // 严格按保存的模型、模式和思考等级提交。
   const content = await bridge.submit({ ...body, geminiPlan: settings.geminiPlan, geminiThinking: settings.geminiThinking })
   return sendJson(res, 200, {
     choices: [{ message: { role: 'assistant', content } }],
