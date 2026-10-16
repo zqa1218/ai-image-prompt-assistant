@@ -42,6 +42,7 @@ vi.mock('electron', () => ({
           removeListener() {},
           sendCommand: async (method, params = {}) => {
             if (method === 'DOM.getDocument') return { root: { nodeId: 1 } }
+            if (method === 'Runtime.evaluate') return { result: { type: 'object' } }
             if (method === 'DOM.querySelectorAll') {
               fake.fileSelectors.push(params.selector)
               return params.selector === 'input[type="file"]' ? { nodeIds: [2] } : { nodeIds: [] }

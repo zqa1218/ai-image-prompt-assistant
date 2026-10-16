@@ -471,7 +471,30 @@ export class ChatGptWebController {
     })
   }
 
+  /**
+   * 优先拿到 composer 里的那个 file input。ChatGPT 页面上还有别的隐藏 input，
+   * 按选择器盲取可能塞给错的节点；用页面自己的 closest 判断更稳，
+   * 拿不到 objectId 时再退回按选择器找。
+   */
   async #setFilesOnPageInput(debuggerApi, files) {
+    try {
+      const found = await debuggerApi.sendCommand('Runtime.evaluate', {
+        expression: `(() => {
+          const inputs = [...document.querySelectorAll('input[type="file"]')];
+          const scoped = inputs.filter((node) => node.closest('form, [data-testid="composer"], [data-testid*="composer"]'));
+          return scoped[scoped.length - 1] || inputs[inputs.length - 1] || null;
+        })()`,
+        returnByValue: false,
+      })
+      const objectId = found?.result?.objectId
+      if (objectId) {
+        await debuggerApi.sendCommand('DOM.setFileInputFiles', { files, objectId })
+        await debuggerApi.sendCommand('Runtime.releaseObject', { objectId }).catch(() => {})
+        return true
+      }
+    } catch {
+      // 个别工具链不允许 Runtime.evaluate，退回按选择器找。
+    }
     try {
       await debuggerApi.sendCommand('DOM.enable')
       const { root } = await debuggerApi.sendCommand('DOM.getDocument', { depth: -1, pierce: true })
@@ -518,7 +541,7 @@ export class ChatGptWebController {
             if (/^(blob:|data:image)/i.test(src)) return true;
             return /\\.(png|jpe?g|webp|gif|heic)$/i.test(alt);
           });
-        const cards = [...document.querySelectorAll('[data-testid="composer-attachment"], [data-testid*="attachment-preview"], [data-testid*="file-thumbnail"]')].filter(visible);
+        const cards = [...document.querySelectorAll('[data-testid="composer-attachment"], [data-testid^="attachment"], [data-testid*="attachment-preview"], [data-testid*="file-thumbnail"], [aria-label$=".png"], [aria-label$=".jpg"], [aria-label$=".jpeg"], [aria-label$=".webp"]')].filter(visible);
         return Math.max(imgs.length, cards.length);
       })()`).catch(() => 0)
       if (count >= expected) return
