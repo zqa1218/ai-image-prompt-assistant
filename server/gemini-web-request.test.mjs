@@ -38,7 +38,9 @@ describe('Gemini 网页请求包', () => {
     expect(prompt).toContain('【纯文字任务 · 禁止生成图片】')
     expect(prompt).toContain('不是让你动手改图')
     expect(prompt).toContain('再次确认（最高优先级）')
-    expect(prompt.trimEnd().endsWith('改用文字回答上面的任务。')).toBe(true)
+    expect(prompt).toContain('改用文字回答上面的任务。')
+    // 结尾还要拦住模型自己补的“建议使用某某模型”，否则会被一起复制进绘图工具。
+    expect(prompt).toContain('结尾不要补「建议使用某某模型进行…」')
     // 约束必须在正文之前，否则模型先读到“修图”就会开始做图
     expect(prompt.indexOf('禁止生成图片')).toBeLessThan(prompt.indexOf('# 本轮任务'))
   })

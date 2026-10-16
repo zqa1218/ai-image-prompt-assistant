@@ -4,7 +4,7 @@
 
 把一张原图和你的需求，编译成可以直接使用的提示词。
 
-面向 AI 修图与生图：登录一次 Gemini 网页，选一条工作路径，上传原图和参考图，程序分阶段分析、给出可点选的方向，最后产出可以直接使用的提示词。
+面向 AI 修图与生图：登录一次 Gemini 网页或 ChatGPT 网页，选一条工作路径，上传原图和参考图，程序分阶段分析、给出可点选的方向，最后产出可以直接使用的提示词。
 
 ## 安装（普通用户）
 
@@ -58,9 +58,9 @@ npm install
 npm run dev
 ```
 
-打开 http://127.0.0.1:5173。网页开发模式可调用 API；Gemini 网页桥接需要运行 `npm run desktop`，在「设置」页登录 Gemini 网页。
+打开 http://127.0.0.1:5173。网页开发模式可调用 API；网页桥接需要运行 `npm run desktop`，在「设置」页分别登录 Gemini 或 ChatGPT。
 
-登录态保存在桌面端独立的本地浏览器会话里，不读取 Google Gemini 客户端的 Cookie。顶部可以一键切换「Gemini 网页 / API」。API 默认 `deepseek-flash`（DeepSeek V4.1 Flash），在设置中填写 API Key；桌面端使用系统加密保存 Key，响应不回显。开发服务支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 环境变量。API 单独计费，不包含在 Gemini Pro 会员中。演示模式不访问任何模型。
+登录态保存在桌面端独立的本地浏览器会话里，不读取 Gemini 或 ChatGPT 客户端的 Cookie。顶部可以一键切换「Gemini 网页 / ChatGPT 网页 / API」。API 默认 `deepseek-flash`（DeepSeek V4.1 Flash），在设置中填写 API Key；桌面端使用系统加密保存 Key，响应不回显。开发服务支持 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` 环境变量。API 单独计费，不包含在网页会员中。演示模式不访问任何模型。
 
 ## 工作原理
 
@@ -78,7 +78,25 @@ npm run dev
 
 若回复跑偏，点击「对话跑偏，重开」解除当前底图的对话关联，清除模型旧分析与提示词，回到接收步骤重新分析；不删除云端历史，保留本地需求、用户补充与图片。提交中断/超时会标记旧会话为不确定，下次重新建立干净对话。不承诺自动识别所有语义污染；人工输入的未发送草稿会阻止自动提交，避免被覆盖。
 
-两种渠道共用同一条 Skill 编译链：精修线固定携带真人 Cosplay 后期母规则、置景合成专项规则及资产页自定义内容。API 将完整多模态消息直接发到配置的服务；网页模式将相同消息编译为网页文本和附件。发送中禁止修改配置。API Key 与对话映射保存在本机用户数据目录，不打入 EXE。
+三种渠道共用同一条 Skill 编译链：精修线固定携带真人 Cosplay 后期母规则、置景合成专项规则及资产页自定义内容。API 将完整多模态消息直接发到配置的服务；网页模式（Gemini / ChatGPT）将相同消息编译为网页文本和附件。发送中禁止修改配置。API Key 与对话映射保存在本机用户数据目录，不打入 EXE。
+
+### ChatGPT 接入说明
+
+ChatGPT 通道和 Gemini 通道共用同一套编译与提交流程，只是换成 `chatgpt.com`：同样是独立真实 Chrome / Edge 窗口（登录态放在 `%APPDATA%\PromptWizard\chatgpt-browser`，与 Gemini 的配置目录、对话存档完全分开），同样按底图内容指纹绑定一个网页对话，未变化的附件不重复上传，全程不调用 OpenAI API。
+
+顶部「网页方案」下拉控制固定哪个模型：
+
+- **沿用网页当前模型（默认）**：不动模型菜单，直接用你在网页里已经选好的那个，最稳也最快，菜单改版也不会把它弄坏
+- **Instant · 最快 / Thinking · 推理 / Pro · 最强 / 自动**：固定切到对应档位；菜单里找不到就报错，不偷偷换成别的模型
+
+切档位时按子串匹配（Thinking / 思考、Instant / 快速 这类中英文差异都认），并让「文案最短的选项优先」，避免点到描述里也提到该词的其它档位。
+
+### 纯提示词输出
+
+复制出来的提示词不该夹带模型自己补的话，所以做了两道防线：
+
+1. 提示词里明确要求 `prompt` 字段只放正文，结尾不要追加「建议使用某某模型生成」这类推荐、使用说明或寒暄，这些信息只写进 `channel` 字段；
+2. 应用侧再兜一次：`src/lib/promptClean.ts` 会剥掉末尾最多三行的工具推荐与收尾客套，也能剥掉和正文挤在同一行末尾的建议；带「禁止 / 不要 / 保持 / 保留 / 确认」这类指令词的结尾行按正文保留，不会被误删。
 
 ### 桌面端与 Photoshop
 
@@ -106,6 +124,13 @@ npm run dev
 
 ```
 server/                    本地代理：/api/settings、/api/models、/api/chat
+  gemini-web-request.mjs   网页请求编译（Gemini 与 ChatGPT 共用）
+  gemini-plans.mjs         Gemini 网页方案（模式 + 模型）
+  chatgpt-plans.mjs        ChatGPT 网页方案（模型档位）
+electron/
+  gemini-web.mjs           Gemini 网页通道
+  chatgpt-web.mjs          ChatGPT 网页通道
+  conversation-store.mjs   对话存档（只存图片指纹与对话链接）
 src/
   stages/                  六个阶段视图
   components/              Stepper / OptionCard / FreeInput / PromptOutput / ImageDropzone

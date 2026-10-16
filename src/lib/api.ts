@@ -1,15 +1,21 @@
 export type SettingsResponse = {
-  mode: 'gemini-web' | 'api'
+  mode: 'gemini-web' | 'chatgpt-web' | 'api'
   baseUrl: string
   model: string
   /** 网页端方案 ID，见 server/gemini-plans.mjs */
   geminiPlan: string
   /** 思考等级：'' = 跟随账号，其余为 低点 / 中等 / 高点 */
   geminiThinking: string
+  /** ChatGPT 网页方案 ID，见 server/chatgpt-plans.mjs */
+  chatgptPlan: string
   plans: { id: string; label: string; note: string }[]
+  chatgptPlans: { id: string; label: string; note: string }[]
   hasKey: boolean
   keySource: 'env' | 'local' | 'none'
 }
+
+/** 网页渠道：Gemini 与 ChatGPT 走同一套接口，只换 channel。 */
+export type WebChannel = 'gemini-web' | 'chatgpt-web'
 
 export type ModelInfo = {
   id: string
@@ -70,11 +76,12 @@ export function getSettings(): Promise<SettingsResponse> {
 }
 
 export function saveSettings(patch: {
-  mode?: 'gemini-web' | 'api'
+  mode?: 'gemini-web' | 'chatgpt-web' | 'api'
   baseUrl?: string
   model?: string
   geminiPlan?: string
   geminiThinking?: string
+  chatgptPlan?: string
   apiKey?: string
 }): Promise<SettingsResponse> {
   return request<SettingsResponse>('/api/settings', {
@@ -83,29 +90,31 @@ export function saveSettings(patch: {
   })
 }
 
-export function resetGeminiConversation(conversationId: string): Promise<{ ok: boolean }> {
-  return request('/api/gemini/reset', { method: 'POST', body: JSON.stringify({ conversationId }) })
+export function resetWebConversation(channel: WebChannel, conversationId: string): Promise<{ ok: boolean }> {
+  return request('/api/web/reset', { method: 'POST', body: JSON.stringify({ channel, conversationId }) })
 }
 
 export function listModels(): Promise<{ models: ModelInfo[] }> {
   return request<{ models: ModelInfo[] }>('/api/models')
 }
 
-export type GeminiWebStatus = {
+export type WebStatus = {
   connected: boolean
+  channel?: WebChannel
   account?: string
   model?: string
   detail?: string
+  engine?: 'chrome' | 'embedded'
 }
 
-export function getGeminiStatus(): Promise<GeminiWebStatus> {
-  return request<GeminiWebStatus>('/api/gemini/status')
+export function getWebStatus(channel: WebChannel): Promise<WebStatus> {
+  return request<WebStatus>(`/api/web/status?channel=${channel}`)
 }
 
-export function openGeminiLogin(email: string): Promise<GeminiWebStatus> {
-  return request<GeminiWebStatus>('/api/gemini/open', {
+export function openWebLogin(channel: WebChannel, email = ''): Promise<WebStatus> {
+  return request<WebStatus>('/api/web/open', {
     method: 'POST',
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ channel, email }),
   })
 }
 

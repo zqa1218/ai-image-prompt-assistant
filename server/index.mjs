@@ -102,21 +102,35 @@ async function handle(req, res) {
     }
 
     case 'GET /api/models':
-      return sendJson(res, 200, { models: [{ id: 'gemini-web', name: 'Gemini 4 Argon 网页', supportsVision: true }, { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', supportsVision: true }] })
+      return sendJson(res, 200, { models: [{ id: 'gemini-web', name: 'Gemini 4 Argon 网页', supportsVision: true }, { id: 'chatgpt-web', name: 'ChatGPT 网页', supportsVision: true }, { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', supportsVision: true }] })
 
-    case 'POST /api/gemini/reset': {
-      const body = await readJsonBody(req)
-      if (typeof body?.conversationId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.conversationId)) return sendJson(res, 400, { error: { message: '缺少有效的图片对话标识' } })
-      if (!globalThis.promptWizardGeminiWeb) return sendJson(res, 503, { error: { message: '请启动桌面端' } })
-      await globalThis.promptWizardGeminiWeb.resetConversation(body.conversationId)
-      return sendJson(res, 200, { ok: true })
-    }
+    // 网页桥接按渠道分派：Gemini 与 ChatGPT 各自独立，前端只传 channel。
+    case 'GET /api/web/status':
+      return handleWebStatus(res, url)
+
+    case 'POST /api/web/open':
+      return handleWebOpen(req, res, url)
+
+    case 'POST /api/web/reset':
+      return handleWebReset(req, res, url)
+
+    case 'POST /api/gemini/reset':
+      return handleWebReset(req, res, url, 'gemini-web')
 
     case 'GET /api/gemini/status':
-      return handleGeminiStatus(res)
+      return handleWebStatus(res, url, 'gemini-web')
 
     case 'POST /api/gemini/open':
-      return handleGeminiOpen(req, res)
+      return handleWebOpen(req, res, url, 'gemini-web')
+
+    case 'GET /api/chatgpt/status':
+      return handleWebStatus(res, url, 'chatgpt-web')
+
+    case 'POST /api/chatgpt/open':
+      return handleWebOpen(req, res, url, 'chatgpt-web')
+
+    case 'POST /api/chatgpt/reset':
+      return handleWebReset(req, res, url, 'chatgpt-web')
 
     case 'POST /api/chat':
       activeChats += 1
@@ -292,39 +306,69 @@ async function handleChat(req, res) {
     if (!upstream.ok) return sendJson(res, upstream.status, await normalizeUpstreamError(upstream))
     return sendJson(res, 200, await upstream.json())
   }
-  const bridge = globalThis.promptWizardGeminiWeb
+  const channel = settings.mode === 'chatgpt-web' ? 'chatgpt-web' : 'gemini-web'
+  const bridge = webBridge(channel)
   if (!bridge) {
     return sendJson(res, 503, {
-      error: { message: 'Gemini 网页桥接仅在桌面端可用，请启动桌面版助手' },
+      error: { message: `${CHANNEL_LABEL[channel]} 网页桥接仅在桌面端可用，请启动桌面版助手` },
     })
   }
-  // 严格按保存的模型、模式和思考等级提交。
-  const content = await bridge.submit({ ...body, geminiPlan: settings.geminiPlan, geminiThinking: settings.geminiThinking })
+  // 严格按保存的方案提交：Gemini 用「方案 + 思考等级」，ChatGPT 只用方案（网页当前模型由方案决定）。
+  const content = channel === 'chatgpt-web'
+    ? await bridge.submit({ ...body, chatgptPlan: settings.chatgptPlan })
+    : await bridge.submit({ ...body, geminiPlan: settings.geminiPlan, geminiThinking: settings.geminiThinking })
   return sendJson(res, 200, {
     choices: [{ message: { role: 'assistant', content } }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   })
 }
 
-async function handleGeminiStatus(res) {
-  const bridge = globalThis.promptWizardGeminiWeb
-  if (!bridge) {
-    return sendJson(res, 200, {
-      connected: false,
-      detail: '请启动桌面版助手以使用 Gemini 网页桥接',
-    })
-  }
-  return sendJson(res, 200, await bridge.status())
+const CHANNEL_LABEL = { 'gemini-web': 'Gemini', 'chatgpt-web': 'ChatGPT' }
+
+/** channel 查询参数/请求体都接受 gemini、gemini-web、chatgpt、chatgpt-web。 */
+function resolveWebChannel(value, fallback) {
+  if (value === 'chatgpt' || value === 'chatgpt-web') return 'chatgpt-web'
+  if (value === 'gemini' || value === 'gemini-web') return 'gemini-web'
+  if (fallback) return fallback
+  return readSettings().mode === 'chatgpt-web' ? 'chatgpt-web' : 'gemini-web'
 }
 
-async function handleGeminiOpen(req, res) {
-  const bridge = globalThis.promptWizardGeminiWeb
+function webBridge(channel) {
+  return channel === 'chatgpt-web' ? globalThis.promptWizardChatGptWeb : globalThis.promptWizardGeminiWeb
+}
+
+async function handleWebStatus(res, url, fixedChannel) {
+  const channel = resolveWebChannel(url?.searchParams.get('channel'), fixedChannel)
+  const bridge = webBridge(channel)
+  if (!bridge) {
+    return sendJson(res, 200, {
+      channel,
+      connected: false,
+      detail: `请启动桌面版助手以使用 ${CHANNEL_LABEL[channel]} 网页桥接`,
+    })
+  }
+  return sendJson(res, 200, { channel, ...(await bridge.status()) })
+}
+
+async function handleWebOpen(req, res, url, fixedChannel) {
+  const body = await readJsonBody(req)
+  const channel = resolveWebChannel(body?.channel ?? url?.searchParams.get('channel'), fixedChannel)
+  const bridge = webBridge(channel)
   if (!bridge) {
     return sendJson(res, 503, { error: { message: '请启动桌面版助手' } })
   }
-  const body = await readJsonBody(req)
   const email = typeof body?.email === 'string' ? body.email.trim() : ''
   return sendJson(res, 200, email ? await bridge.openLogin(email) : await bridge.openLogin())
+}
+
+async function handleWebReset(req, res, url, fixedChannel) {
+  const body = await readJsonBody(req)
+  const channel = resolveWebChannel(body?.channel ?? url?.searchParams.get('channel'), fixedChannel)
+  if (typeof body?.conversationId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.conversationId)) return sendJson(res, 400, { error: { message: '缺少有效的图片对话标识' } })
+  const bridge = webBridge(channel)
+  if (!bridge) return sendJson(res, 503, { error: { message: '请启动桌面端' } })
+  await bridge.resetConversation(body.conversationId)
+  return sendJson(res, 200, { ok: true })
 }
 
 async function readJsonBody(req) {

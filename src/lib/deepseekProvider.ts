@@ -15,6 +15,7 @@ import {
 import { buildExtractTask, buildStageTask } from './llm/task.ts'
 import type { ContentPart, LlmMessage, ThinkingMode } from './llm/types.ts'
 import { buildPrefix } from './prefix.ts'
+import { stripTrailingAdvice } from './promptClean.ts'
 import { REFERENCE_CATEGORIES } from './wizardTypes.ts'
 import type {
   Artifact,
@@ -185,7 +186,8 @@ async function composeArtifact(ctx: WizardContext, focus?: string): Promise<Arti
 
   if (result.ok) {
     return {
-      prompt: result.data.prompt.trim(),
+      // 网页端常在正文最后补一句「建议使用…模型进行…」，复制进绘图工具就是脏数据。
+      prompt: stripTrailingAdvice(result.data.prompt.trim()),
       channel: result.data.channel?.trim() || fallbackChannel(ctx),
       params: result.data.params?.map((p) => p.trim()).filter(Boolean),
       checklist: result.data.checklist?.map((c) => c.trim()).filter(Boolean),
@@ -193,7 +195,7 @@ async function composeArtifact(ctx: WizardContext, focus?: string): Promise<Arti
   }
 
   return {
-    prompt: result.raw.trim() || '（模型没有返回内容）',
+    prompt: stripTrailingAdvice(result.raw.trim()) || '（模型没有返回内容）',
     channel: `模型未返回结构化结果（${result.reason}），以上为原始输出`,
   }
 }

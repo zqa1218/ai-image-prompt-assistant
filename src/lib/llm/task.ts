@@ -50,6 +50,14 @@ const TEXT_ONLY_RULE =
   '只输出文字结果：不要生成、创建或编辑图片，也不要调用图像生成能力；' +
   '随消息附带的图片只作为你阅读的信息。'
 
+/**
+ * 网页端常把「建议使用某某模型进行生成」这类建议直接写进 prompt 末尾，
+ * 用户复制的是 prompt，于是这句废话会被一起带进绘图工具。
+ */
+const NO_TRAILING_ADVICE =
+  'prompt 字段只放提示词正文本身：不要在结尾追加「建议使用…」「可以配合…」「希望能帮到你」' +
+  '这类工具推荐、使用说明或寒暄，也不要另起「说明」「注意」段落；这类信息只写进 channel 字段。'
+
 /** 只把多选值里的逗号换成顿号，便于模型阅读。 */
 function humanize(value: string): string {
   return value.replace(/,/g, '、')
@@ -220,7 +228,7 @@ function outputRequirement(input: TaskInput): string {
       `只输出一个 json 对象，结构如下：\n` +
       '{"prompt":"最终提示词正文","channel":"喂给谁或如何提交","params":["参数行"],"checklist":["提交前检查项"]}\n' +
       `prompt 字段里要能直接看到：${extra}。` +
-      `${markerNote}${formatNote}${paramNote} 不要输出 json 之外的任何文字。`
+      `${markerNote}${formatNote}${paramNote}${NO_TRAILING_ADVICE} 不要输出 json 之外的任何文字。`
     )
   }
 

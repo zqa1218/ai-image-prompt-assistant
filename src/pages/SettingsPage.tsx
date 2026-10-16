@@ -1,14 +1,82 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getGeminiStatus, openGeminiLogin, type GeminiWebStatus } from '../lib/api.ts'
+import { getWebStatus, openWebLogin, type WebChannel, type WebStatus } from '../lib/api.ts'
 import { useProviderMode } from '../lib/providerMode.ts'
 import { useTransport } from '../lib/transportStore.ts'
 import { useWizard } from '../lib/wizardStore.ts'
 
+/** 两个网页渠道的连接卡片长得一样，只有标题和文案不同。 */
+function WebChannelCard({ channel, title, description, footer }: {
+  channel: WebChannel
+  title: string
+  description: string
+  footer: string
+}) {
+  const [status, setStatus] = useState<WebStatus>({ connected: false, detail: '正在检查…' })
+  const [busy, setBusy] = useState(false)
+  const generating = useWizard((state) => state.busy)
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await getWebStatus(channel))
+    } catch (error) {
+      setStatus({ connected: false, detail: error instanceof Error ? error.message : String(error) })
+    }
+  }, [channel])
+
+  useEffect(() => {
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 3000)
+    return () => window.clearInterval(timer)
+  }, [refresh])
+
+  const login = useCallback(async () => {
+    setBusy(true)
+    try {
+      setStatus(await openWebLogin(channel))
+    } catch (error) {
+      setStatus({ connected: false, detail: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setBusy(false)
+    }
+  }, [channel])
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{description}</p>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium">{status.account || '已登录的账号'}</p>
+            <p className={`mt-1 text-xs ${status.connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+              {status.connected ? `已登录并可用${status.model ? ` · 当前 ${status.model}` : ''}` : status.detail || '尚未登录'}
+            </p>
+            {status.connected && status.engine === 'embedded' && (
+              <p className="mt-1 text-xs text-neutral-500">当前跑在助手内置窗口里；装好 Chrome 或 Edge 后可换用真实浏览器承载。</p>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={busy || generating}
+            onClick={() => void login()}
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+          >
+            {busy ? '正在打开…' : status.connected ? `打开 ${title.replace(' 网页连接', '')} 网页` : '登录账号'}
+          </button>
+        </div>
+      </div>
+
+      <p className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">{footer}</p>
+    </section>
+  )
+}
+
 export default function SettingsPage() {
   const demo = useProviderMode((state) => state.demo)
   const setDemo = useProviderMode((state) => state.setDemo)
-  const [gemini, setGemini] = useState<GeminiWebStatus>({ connected: false, detail: '正在检查…' })
-  const [busy, setBusy] = useState(false)
   const { settings, saving, save } = useTransport()
   const generating = useWizard((state) => state.busy)
   const [baseUrl, setBaseUrl] = useState(settings?.baseUrl || 'https://api.deepseek.com')
@@ -18,32 +86,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (settings) { setBaseUrl(settings.baseUrl); setModel(settings.model) }
   }, [settings?.baseUrl, settings?.model])
-
-  const refresh = useCallback(async () => {
-    try {
-      setGemini(await getGeminiStatus())
-    } catch (error) {
-      setGemini({ connected: false, detail: error instanceof Error ? error.message : String(error) })
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 3000)
-    return () => window.clearInterval(timer)
-  }, [refresh, gemini.account])
-
-  const login = useCallback(async () => {
-    setBusy(true)
-    try {
-      await openGeminiLogin('')
-      await refresh()
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error))
-    } finally {
-      setBusy(false)
-    }
-  }, [refresh, gemini.account])
 
   return (
     <div className="space-y-8">
@@ -67,7 +109,7 @@ export default function SettingsPage() {
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold">API 设置</h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">默认 DeepSeek V4.1 Flash（deepseek-flash），支持图片。API 与网页模式使用相同的置景合成、真人 Cosplay 后期 Skill。API 单独计费，不使用 Gemini Pro 会员额度。</p>
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">默认 DeepSeek V4.1 Flash（deepseek-flash），支持图片。API 与网页模式使用相同的置景合成、真人 Cosplay 后期 Skill。API 单独计费，不使用网页会员额度。</p>
         <form className="space-y-3" onSubmit={async (event) => {
           event.preventDefault()
           const ok = await save({ baseUrl, model, ...(apiKey.trim() ? { apiKey } : {}) })
@@ -84,38 +126,19 @@ export default function SettingsPage() {
         {notice && <p role="status" className="text-sm">{notice}</p>}
       </section>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold">Gemini 网页连接</h2>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            不使用 Gemini API 或 API Key。助手会打开独立的 Chrome 窗口，使用顶部所选模型和模式，上传图片、提交需求并抓取回复。失败时保留原因，不自动更换模型。
-          </p>
-        </div>
+      <WebChannelCard
+        channel="gemini-web"
+        title="Gemini 网页连接"
+        description="不使用 Gemini API 或 API Key。助手会打开独立的 Chrome 窗口，使用顶部所选方案，上传图片、提交需求并抓取提示词。失败时保留原因，不自动更换方案。"
+        footer="登录态保存在助手自己的浏览器配置里，不动你平时用的 Chrome 资料。第一次使用请在弹出的窗口完成 Google 登录（邮箱已自动填好），密码、验证码与安全确认都在那个窗口里完成——助手既不读取也不保存密码，登录一次后长期有效。"
+      />
 
-        <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium">{gemini.account || '已登录的 Google 账号'}</p>
-              <p className={`mt-1 text-xs ${gemini.connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                {gemini.connected ? `已登录并可用${gemini.model ? ` · 当前 ${gemini.model}` : ''}` : gemini.detail || '尚未登录'}
-              </p>
-              {gemini.account && <p className="mt-1 text-xs text-neutral-500">{gemini.account}</p>}
-            </div>
-            <button
-              type="button"
-              disabled={busy || generating}
-              onClick={() => void login()}
-              className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-            >
-              {busy ? '正在打开…' : gemini.connected ? '打开 Gemini 网页' : '登录 Gemini Pro'}
-            </button>
-          </div>
-        </div>
-
-        <p className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
-          登录态保存在助手自己的浏览器配置里，不动你平时用的 Chrome 资料。第一次使用请在弹出的 Chrome 窗口完成 Google 登录（邮箱已自动填好），密码、验证码与安全确认都在那个窗口里完成——助手既不读取也不保存密码，登录一次后长期有效。
-        </p>
-      </section>
+      <WebChannelCard
+        channel="chatgpt-web"
+        title="ChatGPT 网页连接"
+        description="与 Gemini 网页完全相同的用法：打开独立的 Chrome 窗口登录 ChatGPT，按顶部所选方案（默认沿用网页当前模型）提交 Skill、需求、底图和参考图，只抓回文字提示词，不生成图片。"
+        footer="ChatGPT 使用独立于 Gemini 的浏览器配置与对话存档，两个账号互不影响；同样不读取、不保存密码。默认方案是「沿用网页当前模型」，如果想固定档位（Instant / Thinking / Pro），可在顶部切换。"
+      />
     </div>
   )
 }

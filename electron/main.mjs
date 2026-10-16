@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, safeStorage } from 'electron'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { GeminiWebController } from './gemini-web.mjs'
+import { ChatGptWebController } from './chatgpt-web.mjs'
 import { installPhotoshopPlugin } from './photoshop-plugin.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -33,6 +34,13 @@ if (!app.requestSingleInstanceLock()) {
       dataDir: app.getPath('userData'),
       // Gemini 会话跑在真实 Chrome / Edge 里，配置目录单独放，不碰用户平时的浏览器资料。
       browserProfileDir: path.join(app.getPath('appData'), 'PromptWizard', 'gemini-browser'),
+      browserExecutable: process.env.PW_BROWSER_PATH || '',
+    })
+    // ChatGPT 网页通道：同样用独立配置目录，登录态与 Gemini 互不影响。
+    globalThis.promptWizardChatGptWeb = new ChatGptWebController({
+      icon,
+      dataDir: app.getPath('userData'),
+      browserProfileDir: path.join(app.getPath('appData'), 'PromptWizard', 'chatgpt-browser'),
       browserExecutable: process.env.PW_BROWSER_PATH || '',
     })
 
@@ -72,5 +80,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => {
     void globalThis.promptWizardGeminiWeb?.window?.close?.()
+    void globalThis.promptWizardChatGptWeb?.window?.close?.()
   })
 }

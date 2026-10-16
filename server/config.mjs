@@ -8,6 +8,11 @@ import {
   coercePlanId,
   planOptions,
 } from './gemini-plans.mjs'
+import {
+  DEFAULT_CHATGPT_PLAN_ID,
+  chatGptPlanOptions,
+  coerceChatGptPlanId,
+} from './chatgpt-plans.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const PROJECT_ROOT = path.resolve(here, '..')
@@ -20,6 +25,7 @@ const defaults = {
   model: process.env.DEEPSEEK_MODEL || 'deepseek-flash',
   geminiPlan: process.env.PW_GEMINI_PLAN || DEFAULT_PLAN_ID,
   geminiThinking: process.env.PW_GEMINI_THINKING || '',
+  chatgptPlan: process.env.PW_CHATGPT_PLAN || DEFAULT_CHATGPT_PLAN_ID,
 }
 
 export function readSettings() {
@@ -37,7 +43,9 @@ export function publicSettings(settings = readSettings()) {
   return { mode: settings.mode, baseUrl: settings.baseUrl, model: settings.model,
     geminiPlan: coercePlanId(settings.geminiPlan),
     geminiThinking: THINKING_LEVELS.includes(settings.geminiThinking) ? settings.geminiThinking : '',
+    chatgptPlan: coerceChatGptPlanId(settings.chatgptPlan),
     plans: planOptions(),
+    chatgptPlans: chatGptPlanOptions(),
     hasKey: Boolean(settings.apiKey), keySource: settings.encryptedKey ? 'local' : settings.apiKey ? 'env' : 'none' }
 }
 
@@ -45,7 +53,7 @@ export function updateSettings(patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('设置必须是 JSON 对象')
   const next = readSettings()
   if (patch.mode !== undefined) {
-    if (!['api', 'gemini-web'].includes(patch.mode)) throw new Error('未知运行模式')
+    if (!['api', 'gemini-web', 'chatgpt-web'].includes(patch.mode)) throw new Error('未知运行模式')
     next.mode = patch.mode
   }
   if (patch.baseUrl !== undefined) {
@@ -66,6 +74,10 @@ export function updateSettings(patch) {
   if (patch.geminiThinking !== undefined) {
     if (typeof patch.geminiThinking !== 'string' || !THINKING_LEVELS.includes(patch.geminiThinking)) throw new Error('未知的思考等级')
     next.geminiThinking = patch.geminiThinking
+  }
+  if (patch.chatgptPlan !== undefined) {
+    if (typeof patch.chatgptPlan !== 'string' || !chatGptPlanOptions().some((plan) => plan.id === patch.chatgptPlan)) throw new Error('未知的 ChatGPT 网页方案')
+    next.chatgptPlan = patch.chatgptPlan
   }
   if (patch.apiKey !== undefined) {
     if (typeof patch.apiKey !== 'string' || patch.apiKey.length > 4096) throw new Error('API Key 格式无效')

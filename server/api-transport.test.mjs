@@ -55,6 +55,14 @@ it('真实本地 HTTP 路由：切换 API、透传规则和图片、不外传会
     expect((await call('/api/settings', 'PUT', { baseUrl: 'https://different.example' })).status).toBe(400)
     await call('/api/settings', 'PUT', { mode: 'gemini-web' })
     expect((await call('/api/chat', 'POST', { messages })).status).toBe(503)
+    // ChatGPT 网页通道同样是桌面端专有：服务端单独跑时应当给出 503 而不是别的模型。
+    const chatgpt = await (await call('/api/settings', 'PUT', { mode: 'chatgpt-web' })).json()
+    expect(chatgpt.mode).toBe('chatgpt-web')
+    expect(chatgpt.chatgptPlan).toBe('current')
+    expect((await call('/api/chat', 'POST', { messages })).status).toBe(503)
+    const status = await (await call('/api/web/status?channel=chatgpt-web')).json()
+    expect(status).toMatchObject({ channel: 'chatgpt-web', connected: false })
+    expect(status.detail).toContain('ChatGPT')
   } finally {
     const exited = once(child, 'exit')
     child.kill()
