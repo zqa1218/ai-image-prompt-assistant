@@ -1,0 +1,1 @@
+case`detail`:return(0,B.jsx)(Wd,{selected:ld(e),notes:e.notes,messages:e.messages,busy:e.busy,onAsk:e.addNote,questions:e.questions,onLoad:e.loadChecklist,onAnswer:e.answerChecklist,placement:mu(ad(e))});

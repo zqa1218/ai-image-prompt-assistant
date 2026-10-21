@@ -1,0 +1,1 @@
+{key:`referencePolicy`,label:`提示词写法`,kind:`select`,required:!1,defaultValue:`置景合成模式`,showWhen:{field:`taskType`,includes:`置入物体`},options:[`置景合成模式`,`参考图参与模式`]},

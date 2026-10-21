@@ -1,0 +1,1 @@
+i=t=>{let n=Eu(t.trim()),pol=String((e.intake&&e.intake.referencePolicy)||``),useDu=e.workflow.id===`refine`&&cl(e.intake.taskType).includes(`置入物体`)&&pol.indexOf(`参考图参与`)<0,s=useDu?Du(n):n;return s.replace(/\[cite:[^\]]*\]/giu,``).replace(/[ \t]{2,}/gu,` `).trim()}
