@@ -1,0 +1,311 @@
+{
+  "id": "refine",
+  "name": "原图精修线",
+  "summary": "把底图、参考图和修图需求编译成可直接交给 Gemini / Nano Banana 的图像编辑提示词。",
+  "outputContract": "complete-cn",
+  "sharedAssets": ["analysis-framework"],
+  "assets": ["wenjun-cos-retouch", "figure-base-rules", "refine-four-section", "gemini-edit-prompt"],
+  "directives": [
+    {
+      "when": { "field": "taskType", "includes": "质感升级" },
+      "label": "产品精修模板",
+      "instruction": "本次任务包含「质感升级」，按产品精修模板执行：主体保留，重点是质感升级而不是替换；不强行换背景；不改产品形态与文字。先在原图上指出要强化的方面（质感 / 光泽 / 标签 / 阴影），再写修改项。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "局部替换" },
+      "label": "局部替换的范围约束",
+      "instruction": "本次任务包含「局部替换」。只动用户指定的区域，其余区域逐像素保持一致；替换进来的物件必须延续原图的透视、材质、光照与投影方向，并在边界处与周围环境自然衔接，不留下可见接缝。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "人像局部修改" },
+      "label": "人像局部编辑",
+      "instruction": "本次任务包含「人像局部修改」。人物的身份、五官、发型、身体比例必须保持不变，只改用户指定的区域以及与这块区域直接相关的光影；不要把改动扩散到面部辨识特征上。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "头发精修" },
+      "label": "真人头发专项",
+      "instruction": "只处理用户指定的头发区域。底图决定人物身份、发色、刘海、环境受光和摄影质感；参考图只承担用户指定的发束结构或轮廓。发根必须合理连接头皮，主发束有粗细、惯性、重力、发尾分叉和正确前后遮挡；禁止假发塑料光、均匀条纹高光、贴片发块、换脸、误换发色或连带修改衣装。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "局部重绘 / 选区修复" },
+      "label": "选区主权",
+      "instruction": "当前选区、蒙版或涂抹范围是唯一授权编辑区域。绿色或红色笔触只表示范围、轨迹或方向，最终必须完全清除；选区外人物、衣装、背景、构图和光影保持不变。修改内容继承原图的纹理、颗粒、锐度、透视、遮挡和边缘过渡。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "半合成置景" },
+      "label": "原场照半合成",
+      "instruction": "保留原人物与原场馆可识别骨架，新置景必须适应原空间。默认中景优先，只使用 1 个主体结构和 2～4 个同一材质语言的辅助实体；逐项写清位置、相对人物高度、材质、延伸、支撑、遮挡和现场光影关系。原图无可见地面时不得虚构地台，禁止整体换景和无来源特效。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "置入物体" },
+      "label": "地台与环境物品专项",
+      "instruction": "本次任务包含「置入物体」，必须完整执行 figure-base-rules：参考图只用于解析要置入物体的类别、外形、材质、颜色、结构与磨损，原图用于决定最终布局、镜头、透视、尺度、遮挡和光影。先按用户选择判定仅地台、手办台、仅环境物品或地台加环境物品；新增物件要有明确支撑、重量、接触点与接触阴影，并匹配原图镜头高度、地平线、透视、人物比例、景深、环境色与投影方向。方向建议和最终 Prompt 都要逐项写清物体位于前景/中景/背景哪一层、画面方位、相对人物的尺度与距离、遮挡人物哪个部位、人物如何接触或互动、落点、接触阴影与投影；禁止悬空、穿模、错误缩放和不合理堆叠。必须把参考图信息全部转写成物体自身的具体可见描述；最终 Prompt 不得出现 REFERENCE、参考图、图片编号、“与某图一致”或任何来源说明。"
+    },
+    {
+      "when": { "field": "placementMode", "includes": "仅环境物品" },
+      "label": "仅环境物品模式",
+      "instruction": "只添加可独立摆放和移除的物品，不新增地台、平台、地面替换、墙体、门窗、完整建筑、完整房间、天空替换或背景改造；严格保持原本环境不变。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "风格迁移" },
+      "label": "风格迁移",
+      "instruction": "本次任务包含「风格迁移」。只迁移用户勾选的视觉语言（背景、元素、特效、光线、色调、材质），原图的主体、身份与构图必须保持不变。迁移进来的每一项都要说明它落在原图的什么位置、如何与原图的光向、透视与景深对齐、与原图已有物体之间如何遮挡；不要整张照搬参考图，也不要把参考图的独特表达与可识别内容一起搬过来。用户没有勾选的项一律不要引入。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "生成场景" },
+      "label": "场景重建",
+      "instruction": "本次任务包含「生成场景」。先重建新视角下的受光关系再编译提示词：光源、遮挡物与环境反射固定在世界空间中。场景复杂度服从原图的画面信息层级，先区分主体清晰区、主导大形、次级细节与低细节留白，不因元素变多就让每一层都清楚。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "增加特效" },
+      "label": "光效为次级元素",
+      "instruction": "本次任务包含「增加特效」。光效只能作为次级元素：先表现真实物体本身，再加入克制的折射、微光、霜粒、火焰或粒子；禁止用烟雾、过曝或大面积发光覆盖材质细节。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "粒子 / 体积雾 VFX" },
+      "label": "VFX 合成语法",
+      "instruction": "明确特效发生源、形态、HEX 主辅色、密度和衰减、方向和速度、湍流与拖尾、前中后景遮挡、散射及是否授权破坏源物体。默认只叠加且不损坏人物或服装；只有用户明确授权破坏时，才允许实体从纤维或碎片连续逸散成粒子。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "2D 转 3D" },
+      "label": "选区二维立体化",
+      "instruction": "只立体化选区内目标物体，锁定原轮廓、位置、大小、比例、朝向、纹样、配色与设计身份；只补真实厚度、曲率、侧面、层级、连接件和符合底图光照的材质响应。禁止重新设计整件道具、改动真人或选区外画面。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "九宫格策划" },
+      "label": "九宫格双模式",
+      "instruction": "默认执行九格九环境：同一底图、真人、动作、机位、裁切和光影，只改变局部环境、地台、材质与空间结构。只有用户明确要求九格九动作时，才允许动作和机位变化，同时锁定身份、妆造、服装、道具与题材。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "移除杂物" },
+      "label": "物体移除的补全要求",
+      "instruction": "本次任务包含「移除杂物」。移除后补全的区域必须延续原有的透视、材质与光照，不得留下涂抹痕迹、重复纹理或明显的克隆接缝。"
+    },
+    {
+      "when": { "field": "taskType", "includes": "替换背景" },
+      "label": "换背景的遮挡重建",
+      "instruction": "本次任务包含「替换背景」。必须重建主体边缘、遮挡关系与落在新背景上的投影，保持原图光向与色温的一致性；主体边缘不得出现白边或抠图感。"
+    }
+  ],
+  "stages": [
+    {
+      "id": "intake",
+      "title": "接收",
+      "intent": "按真人 Cos 后期输入卡收集任务、图像职责、编辑区域、目标、保留项与交付形式。已有信息不要重复问；关键对象不明且会导致误编辑时最多追问一个必要问题。",
+      "mode": "form",
+      "thinking": { "mode": "disabled" },
+      "fields": [
+        {
+          "key": "requirement",
+          "label": "修图需求",
+          "kind": "textarea",
+          "required": true,
+          "placeholder": "例：只在绿色选区补齐后侧发束；发色和人物身份以底图为准"
+        },
+        {
+          "key": "usage",
+          "label": "用途",
+          "kind": "multi",
+          "required": false,
+          "options": ["电商主图", "社媒", "印刷", "个人作品"]
+        },
+        {
+          "key": "taskType",
+          "label": "任务类型",
+          "kind": "multi",
+          "required": false,
+          "options": [
+            "质感升级",
+            "替换背景",
+            "移除杂物",
+            "局部替换",
+            "人像局部修改",
+            "头发精修",
+            "厚涂修发",
+            "局部重绘 / 选区修复",
+            "半合成置景",
+            "增加特效",
+            "粒子 / 体积雾 VFX",
+            "2D 转 3D",
+            "九宫格策划",
+            "生成场景",
+            "置入物体",
+            "风格迁移"
+          ]
+        },
+        {
+          "key": "hairMode",
+          "label": "厚涂修发模式",
+          "kind": "select",
+          "required": false,
+          "defaultValue": "参考适配设计",
+          "showWhen": { "field": "taskType", "includes": "厚涂修发" },
+          "options": ["参考适配设计", "参考严格复刻", "已有结果局部优化", "自由设计"]
+        },
+        {
+          "key": "editRegion",
+          "label": "编辑区域",
+          "kind": "text",
+          "required": false,
+          "placeholder": "例：当前选区 / 绿色笔刷 / 人物右侧裙摆边缘"
+        },
+        {
+          "key": "preserve",
+          "label": "保持不变",
+          "kind": "multi",
+          "required": false,
+          "options": ["人物身份与脸", "发色与刘海", "服装与道具", "动作与身体比例", "构图与裁切", "机位与透视", "原场馆骨架", "曝光与光影", "景深与颗粒"]
+        },
+        {
+          "key": "referenceRole",
+          "label": "参考图用途",
+          "kind": "multi",
+          "required": false,
+          "options": [
+            "人物 / 人设资产",
+            "发型或结构",
+            "服装或道具",
+            "置入物体",
+            "特效形态与运动",
+            "材质与质感",
+            "背景空间",
+            "光线与色调",
+            "选区 / 画笔范围"
+          ]
+        },
+        {
+          "key": "placementMode",
+          "label": "置景模式",
+          "kind": "select",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": ["仅地台", "手办台", "仅环境物品", "地台 + 环境物品"]
+        },
+        {
+          "key": "placementLayer",
+          "label": "所在层次",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": ["前景", "中景", "背景"]
+        },
+        {
+          "key": "placementHorizontal",
+          "label": "水平位置",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": [
+            "画面左侧边缘",
+            "画面右侧边缘",
+            "画面中间",
+            "主体左旁",
+            "主体右旁"
+          ]
+        },
+        {
+          "key": "placementDistance",
+          "label": "远近",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": ["近处（贴近镜头）", "中距离", "远处"]
+        },
+        {
+          "key": "interaction",
+          "label": "交互关系",
+          "kind": "multi",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "置入物体" },
+          "options": [
+            "放置在平面",
+            "倚靠",
+            "悬挂",
+            "插入",
+            "堆叠",
+            "垂落",
+            "固定支撑",
+            "被主体持有"
+          ]
+        },
+        {
+          "key": "effectSource",
+          "label": "特效发生源 / 运动方向",
+          "kind": "text",
+          "required": false,
+          "showWhen": { "field": "taskType", "includes": "粒子 / 体积雾 VFX" },
+          "placeholder": "例：从人物右侧裙摆边缘向右上逸散，主色 #FFFFFF"
+        },
+        {
+          "key": "outputMode",
+          "label": "交付形式",
+          "kind": "select",
+          "required": false,
+          "defaultValue": "1 条完整中文 Prompt",
+          "options": ["1 条完整中文 Prompt", "6 个差异化方向", "9 宫格方案"]
+        },
+        {
+          "key": "outputSize",
+          "label": "输出尺寸",
+          "kind": "multi",
+          "required": false,
+          "defaultValue": "原图尺寸",
+          "options": ["原图尺寸", "2K", "4K", "自定义"]
+        },
+        {
+          "key": "outputSizeCustom",
+          "label": "自定义尺寸",
+          "kind": "text",
+          "required": false,
+          "showWhen": { "field": "outputSize", "includes": "自定义" },
+          "placeholder": "例：2000×2500"
+        },
+        {
+          "key": "constraints",
+          "label": "约束",
+          "kind": "textarea",
+          "required": false,
+          "placeholder": "必须保留什么、绝对不能改什么"
+        }
+      ]
+    },
+    {
+      "id": "analyze",
+      "title": "原图分析",
+      "intent": "先按可见事实拆解主体、构图、摄影光、景深、场馆骨架、编辑区域与越界风险，再判定底图、参考图和选区的主权；不确定的标「疑似」，这一阶段不给建议。",
+      "mode": "auto",
+      "thinking": { "mode": "disabled" }
+    },
+    {
+      "id": "direction",
+      "title": "方向建议",
+      "intent": "给出 2~3 个差异化方向。每个方向写清：改什么、保留什么、成像结果、代价与风险、适配通道。明确标出一个推荐项。",
+      "mode": "choice",
+      "thinking": { "mode": "enabled", "effort": "low" },
+      "minOptions": 2,
+      "maxOptions": 3
+    },
+    {
+      "id": "detail",
+      "title": "细化",
+      "intent": "根据选中方向补齐范围、位置、比例、材质、遮挡、接触关系与摄影融合。已有信息不再询问；只有关键对象不明且会误编辑时追问一个必要问题。",
+      "mode": "hybrid",
+      "thinking": { "mode": "disabled" }
+    },
+    {
+      "id": "compose",
+      "title": "生成提示词",
+      "intent": "按吻君真人 Cos 后期母规则与 Gemini 图像编辑协议，输出一条独立、连续、可直接复制的完整中文 Prompt，明确 REFERENCE_0 底图与 REFERENCE_1...N 参考图的唯一职责。",
+      "mode": "auto",
+      "thinking": { "mode": "enabled", "effort": "low" },
+      "outputContract": "complete-cn"
+    },
+    {
+      "id": "iterate",
+      "title": "迭代",
+      "intent": "接收失败现象或单点反馈，将失败项提升为强约束，保留其余已确认内容，并从 REFERENCE_0 开始重写一条不依赖历史表述的完整 Prompt。每轮只修一个变量。",
+      "mode": "free",
+      "thinking": { "mode": "disabled" }
+    }
+  ]
+}
