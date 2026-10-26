@@ -1,0 +1,2 @@
+# Preserve extracted files byte-for-byte for ASAR comparison.
+* -text

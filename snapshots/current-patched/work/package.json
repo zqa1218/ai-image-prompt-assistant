@@ -1,0 +1,16 @@
+{
+  "name": "prompt-wizard",
+  "private": true,
+  "version": "0.3.4",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5",
+    "zustand": "^5.0.15",
+    "ws": "^8.18.3"
+  },
+  "description": "AI 修图提示词助手：把底图、参考图和需求编译成可直接使用的修图提示词",
+  "author": "zqa1218"
+}
