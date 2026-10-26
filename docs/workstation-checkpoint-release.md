@@ -4,9 +4,11 @@
 
 ## 下载与使用
 
-- `prompt-wizard-current-win-x64.zip`：当前补丁版完整 Windows x64 运行文件，包含 Electron 和 app.asar。解压到独立目录，再打开 `AI修图提示词助手.exe`。不需要覆盖原程序；不包含卸载器。
-- `manifest.json` / `SHA256SUMS.txt`：源文件与运行文件校验清单、压缩包校验值。
-- 当前程序继续使用原有应用数据位置，独立解压不代表账号和档案隔离。请勿同时运行两份程序。
+- `prompt-wizard-app-update.zip`：当前补丁版的轻量应用更新包，含 `app.asar` 和恢复说明。**不是独立 EXE 或安装器，需要与当前 pw-patched 匹配的现有 Electron 程序。** 完全退出程序并备份原 `resources/app.asar` 后再替换，异常时恢复备份。
+- `APP-UPDATE-SHA256.txt`：更新 ZIP 和解压后 app.asar 的校验值。
+- `manifest.json` / `SHA256SUMS.txt`：源码与完整运行文件校验清单、完整运行 ZIP 的校验值。
+- `prompt-wizard-current-win-x64.zip` 已在本机打包并逐文件验证，但网络上传缓慢，本 Release 先交付轻量更新包，**目前不包含完整运行 ZIP**。不要将更新包误认为可以单独运行的完整程序。
+- 当前程序继续使用原有应用数据位置，请勿同时运行两份程序。
 - 不包含用户密钥、档案、图片、浏览器登录数据。未签名程序可能触发 Windows 提示。
 
 ## 源码状态
@@ -21,4 +23,4 @@
 
 用户已批准按 `docs/dual-view-workstation-plan.md` 推进。先完成 P0 的功能等价和构建验证，再展示双视图原型；布局确认前不替换当前程序。随后实现预设卡、执行状态和耀 AI 的复制／导出交接，不自动提交付费生成任务。
 
-本 Release 的 ZIP 来自当前可运行目录，不是从未完成的迁移源码重新构建的安装器。真实模型调用与干净 Windows 机器运行尚未测试。
+本 Release 的更新 ZIP 来自当前可运行应用包，不是从未完成的迁移源码重新构建的安装器。真实模型调用与干净 Windows 机器运行尚未测试。Release 固定在最初备份检查点；后续迁移进度请看 `codex/dual-view-workstation` 分支。
