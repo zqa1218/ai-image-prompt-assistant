@@ -15,8 +15,7 @@ import {
 import { buildExtractTask, buildStageTask } from './llm/task.ts'
 import type { ContentPart, LlmMessage, ThinkingMode } from './llm/types.ts'
 import { buildPrefix } from './prefix.ts'
-import { stripPlacementReferenceLabels, stripTrailingAdvice } from './promptClean.ts'
-import { parseMulti } from './multiValue.ts'
+import { cleanComposedPrompt, composeStructuredArtifact } from './composeArtifact.ts'
 import { REFERENCE_CATEGORIES } from './wizardTypes.ts'
 import type {
   Artifact,
@@ -185,25 +184,12 @@ async function composeArtifact(ctx: WizardContext, focus?: string): Promise<Arti
     artifactSchema,
   )
 
-  const cleanPrompt = (prompt: string) => {
-    const withoutAdvice = stripTrailingAdvice(prompt.trim())
-    return ctx.workflow.id === 'refine' && parseMulti(ctx.intake.taskType).includes('置入物体')
-      ? stripPlacementReferenceLabels(withoutAdvice)
-      : withoutAdvice
-  }
-
   if (result.ok) {
-    return {
-      // 网页端常在正文最后补一句「建议使用…模型进行…」，复制进绘图工具就是脏数据。
-      prompt: cleanPrompt(result.data.prompt),
-      channel: result.data.channel?.trim() || fallbackChannel(ctx),
-      params: result.data.params?.map((p) => p.trim()).filter(Boolean),
-      checklist: result.data.checklist?.map((c) => c.trim()).filter(Boolean),
-    }
+    return composeStructuredArtifact(result.data, ctx, fallbackChannel(ctx))
   }
 
   return {
-    prompt: cleanPrompt(result.raw) || '（模型没有返回内容）',
+    prompt: cleanComposedPrompt(result.raw, ctx) || '（模型没有返回内容）',
     channel: `模型未返回结构化结果（${result.reason}），以上为原始输出`,
   }
 }
@@ -298,6 +284,17 @@ export const deepseekProvider: Provider = {
 
   async compose(ctx) {
     return composeArtifact(ctx)
+  },
+
+  async askChecklist(ctx) {
+    const result = await chat({
+      conversationId: await imageConversationId(ctx.images.find(image => image.role === 'original')),
+      messages: messagesForStage(ctx, 'detail', '【待定项清单】'),
+      ...thinkingOf(stageOf(ctx, 'detail')),
+      temperature: 0.2,
+      maxTokens: 1600,
+    })
+    return result.content.trim()
   },
 
   async iterate(ctx, feedback) {

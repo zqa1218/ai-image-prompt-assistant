@@ -15,6 +15,7 @@ import type {
   WizardImage,
 } from './wizardTypes.ts'
 import { createId } from './wizardTypes.ts'
+import { parseChecklist, checklistSummary, type ChecklistItem } from './checklist.ts'
 
 /** 默认走真实模型；设为 mock 可在没有 key 时演示流程。 */
 let provider: Provider = deepseekProvider
@@ -53,6 +54,11 @@ export type WizardState = {
   messages: ChatMessage[]
   notice: string | null
   busy: boolean
+  questions: ChecklistItem[]
+  checklistBusy: boolean
+  checklistError: string | null
+  loadChecklist: () => Promise<void>
+  answerChecklist: (choices: Record<number, number>) => void
 
   start: (workflowId: string) => void
   /** 载入一份存档：需求、底图、参考图一次换好，产出全部作废。 */
@@ -65,6 +71,7 @@ export type WizardState = {
   setOriginal: (image: ImageRef | null) => void
   addReference: (image: ImageRef) => void
   removeReference: (index: number) => void
+  setReferenceNote: (index: number, note: string) => void
   toggleReferenceItem: (id: string) => void
   goTo: (index: number) => void
   advance: () => Promise<void>
@@ -100,6 +107,9 @@ const initial = {
   messages: [] as ChatMessage[],
   notice: null as string | null,
   busy: false,
+  questions: [] as ChecklistItem[],
+  checklistBusy: false,
+  checklistError: null as string | null,
 }
 
 function workflowOf(state: WizardState): Workflow {
@@ -138,7 +148,7 @@ function invalidateAfter(state: WizardState, index: number) {
   const workflow = workflowOf(state)
   const records = { ...state.records }
   const cleared: string[] = []
-  const patch: Partial<WizardState> = {}
+  const patch: Partial<WizardState> = { questions: [], checklistError: null }
 
   const idx = (id: string) => workflow.stages.findIndex((s) => s.id === id)
 
@@ -176,6 +186,7 @@ function invalidateAfter(state: WizardState, index: number) {
 }
 
 export const useWizard = create<WizardState>()((set, get) => {
+  let checklistRequest = 0
   async function runStage(index: number) {
     const state = get()
     if (!state.workflowId) return
@@ -310,7 +321,7 @@ export const useWizard = create<WizardState>()((set, get) => {
 
     restartModelContext() {
       set({ stageIndex: 0, records: {}, options: [], selectedOptionId: null, artifact: null,
-        referenceItems: [], selectedReferenceItems: [], messages: [],
+        referenceItems: [], selectedReferenceItems: [], messages: [], questions: [], checklistError: null,
         notice: '已清除模型旧结论；保留底图、参考图、需求与用户补充，请继续重新分析。' })
     },
 
@@ -333,11 +344,47 @@ export const useWizard = create<WizardState>()((set, get) => {
         notes: [],
         artifact: null,
         messages: [],
+        questions: [],
+        checklistError: null,
         busy: false,
         notice: keepReferences
           ? '已开始下一组：底图与产出已清空，需求与参考图保留，可在第 1 步调整。'
           : '已开始下一组：底图、参考图与产出已清空，需求保留，可在第 1 步调整。',
       })
+    },
+
+    async loadChecklist() {
+      const snapshot = get()
+      if (!snapshot.workflowId || snapshot.busy || snapshot.checklistBusy) return
+      const request = ++checklistRequest
+      const current = () => {
+        const s = get()
+        return request === checklistRequest && s.workflowId === snapshot.workflowId
+          && s.intake === snapshot.intake && s.original === snapshot.original
+          && s.references === snapshot.references && s.notes === snapshot.notes
+          && s.selectedOptionId === snapshot.selectedOptionId && s.stageIndex === snapshot.stageIndex
+      }
+      set({ checklistBusy: true, checklistError: null, questions: [] })
+      try {
+        if (!provider.askChecklist) throw new Error('当前演示提供方不支持待定项，请切换真实模型或手动补充。')
+        const questions = parseChecklist(await provider.askChecklist(contextOf(snapshot)))
+        if (current()) set({ questions, checklistError: questions.length ? null : '未得到有效待定项，可重新抓取或直接补充要求。' })
+      } catch (error) {
+        if (current()) set({ checklistError: error instanceof Error ? error.message : String(error) })
+      } finally {
+        if (request === checklistRequest) set({ checklistBusy: false })
+      }
+    },
+
+    answerChecklist(choices) {
+      const state = get()
+      if (state.busy || state.checklistBusy) return
+      const text = checklistSummary(state.questions, choices)
+      if (!text) return
+      const { records, patch } = invalidateAfter(state, workflowOf(state).stages.findIndex(s => s.id === 'detail'))
+      set({ ...patch, records, questions: [], notes: [...state.notes, text],
+        messages: [...state.messages, { id: createId('m'), role: 'user', text }],
+        notice: '待定项已写入补充要求，生成提示词时会带上。' })
     },
 
     setIntake(key, value) {
@@ -367,6 +414,13 @@ export const useWizard = create<WizardState>()((set, get) => {
         references: state.references.filter((_, i) => i !== index),
         notice: cleared.length ? `参考图有变化，后续的 ${cleared.join('、')} 已作废。` : null,
       })
+    },
+
+    setReferenceNote(index, note) {
+      const state = get()
+      if (!Number.isInteger(index) || !state.references[index]) return
+      const { records, patch } = invalidateAfter(state, 0)
+      set({ ...patch, records, references: state.references.map((image, i) => i === index ? { ...image, note: note.slice(0, 2000) } : image) })
     },
 
     toggleReferenceItem(id) {

@@ -26,7 +26,7 @@ it('存档可保存、列出、载入、覆盖与删除，并校验载荷', asyn
       workflowId: 'refine',
       intake: { requirement: '保持人物不变', preserve: '人物身份与脸' },
       original: image('base.png'),
-      references: [image('ref.png')],
+      references: [{ ...image('ref.png'), note: ' 只借电弧颜色 ' }],
       thumb: 'data:image/jpeg;base64,AA',
       id: 'not-a-real-id',
     })
@@ -46,6 +46,7 @@ it('存档可保存、列出、载入、覆盖与删除，并校验载荷', asyn
     expect(record.original.dataUrl).toBe('data:image/png;base64,AAAA')
     expect(record.original).not.toHaveProperty('role')
     expect(record.references).toHaveLength(1)
+    expect(record.references[0].note).toBe('只借电弧颜色')
 
     // 覆盖：带 id 原地更新，条数不变、创建时间不变
     const updated = saveArchive({

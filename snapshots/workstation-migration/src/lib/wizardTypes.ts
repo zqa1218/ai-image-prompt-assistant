@@ -4,6 +4,8 @@ export type StageStatus = 'idle' | 'running' | 'ready' | 'error'
 
 export type ImageRef = {
   name: string
+  /** 用户指定的参考图分工，随图片存档，不从模型描述猜测。 */
+  note?: string
   /** 原图的 data URL。M3 会在这里插入压缩与体积预检。 */
   dataUrl: string
   width: number
@@ -101,6 +103,7 @@ export type Provider = {
   extractReferences(ctx: WizardContext): Promise<ReferenceItem[]>
   suggestDirections(ctx: WizardContext): Promise<DirectionOption[]>
   askDetail(ctx: WizardContext, question: string): Promise<string>
+  askChecklist?(ctx: WizardContext): Promise<string>
   compose(ctx: WizardContext): Promise<Artifact>
   iterate(ctx: WizardContext, feedback: string): Promise<Artifact>
 }

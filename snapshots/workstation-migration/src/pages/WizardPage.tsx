@@ -18,9 +18,12 @@ import IntakeStage from '../stages/IntakeStage.tsx'
 import { IterationPanel } from '../features/prompt-tools/index.ts'
 import type { WorkflowStage } from '../workflows/types.ts'
 import { getWorkflow, WORKFLOWS } from '../workflows/index.ts'
+import ChecklistPanel from '../components/ChecklistPanel.tsx'
+import { parseMulti } from '../lib/multiValue.ts'
 
 export default function WizardPage() {
-  const state = useWizard()
+  const storedState = useWizard()
+  const state = { ...storedState, busy: storedState.busy || storedState.checklistBusy }
 
   if (!state.workflowId) {
     return <WorkflowPicker onPick={(id) => state.start(id)} />
@@ -199,6 +202,7 @@ function StageBody({
           onOriginal={state.setOriginal}
           onAddReference={state.addReference}
           onRemoveReference={state.removeReference}
+          onReferenceNote={state.setReferenceNote}
         />
       )
     case 'analyze':
@@ -226,6 +230,8 @@ function StageBody({
       )
     case 'detail':
       return (
+        <>
+        {(state.workflowId === 'refine' || state.workflowId === 'refine-steps') && parseMulti(state.intake.taskType).includes('置入物体') && <ChecklistPanel />}
         <DetailStage
           selected={selectedOption(state)}
           notes={state.notes}
@@ -233,6 +239,7 @@ function StageBody({
           busy={state.busy}
           onAsk={state.addNote}
         />
+        </>
       )
     case 'compose':
       return (

@@ -23,6 +23,7 @@ export function buildGeminiContent(task: string, images: WizardImage[]): Content
         type: 'text',
         text:
           `## 图片附件：REFERENCE_${referenceIndex}（参考图${referenceIndex}）\n` +
+          (image.note?.trim() ? `用户指定分工：${image.note.trim()}\n` : '') +
           '这张图只提供用户明确指定的物体、背景、光线、色调、材质或风格信息；不得取代 REFERENCE_0 成为新底图。',
       })
     }

@@ -16,7 +16,7 @@ describe('Gemini 多模态对话包', () => {
     const parts = buildGeminiContent('任务', [
       image('original', 'base'),
       image('reference', 'ref-a'),
-      image('reference', 'ref-b'),
+      { ...image('reference', 'ref-b'), note: '只借电弧颜色' },
     ])
 
     expect(parts.map((part) => part.type)).toEqual([
@@ -25,6 +25,8 @@ describe('Gemini 多模态对话包', () => {
     expect(parts[1]).toMatchObject({ type: 'text', text: expect.stringContaining('REFERENCE_0') })
     expect(parts[3]).toMatchObject({ type: 'text', text: expect.stringContaining('参考图1') })
     expect(parts[5]).toMatchObject({ type: 'text', text: expect.stringContaining('参考图2') })
+    expect(parts[5]).toMatchObject({ type: 'text', text: expect.stringContaining('用户指定分工：只借电弧颜色') })
+    expect(JSON.stringify(parts[3])).not.toContain('只借电弧颜色')
   })
 
   it('没有图片时不伪造附件说明', () => {

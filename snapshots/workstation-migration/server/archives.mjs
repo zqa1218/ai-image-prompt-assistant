@@ -266,6 +266,7 @@ function normalizeImage(input, label) {
     bytes: positive(input.bytes) || dataUrlBytes(dataUrl),
   }
   const originalBytes = positive(input.originalBytes)
+  if (typeof input.note === 'string' && input.note.trim()) image.note = input.note.trim().slice(0, 2000)
   if (originalBytes) image.originalBytes = originalBytes
   if (typeof input.sourceMime === 'string' && input.sourceMime) {
     image.sourceMime = input.sourceMime.slice(0, 80)

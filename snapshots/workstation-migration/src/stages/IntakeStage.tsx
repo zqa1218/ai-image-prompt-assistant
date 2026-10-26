@@ -18,6 +18,7 @@ type Props = {
   onOriginal: (image: ImageRef | null) => void
   onAddReference: (image: ImageRef) => void
   onRemoveReference: (index: number) => void
+  onReferenceNote: (index: number, note: string) => void
 }
 
 export default function IntakeStage({
@@ -30,6 +31,7 @@ export default function IntakeStage({
   onOriginal,
   onAddReference,
   onRemoveReference,
+  onReferenceNote,
 }: Props) {
   const fields = visibleFields(stage, intake)
 
@@ -71,13 +73,20 @@ export default function IntakeStage({
         {references.length > 0 && (
           <div className="space-y-2">
             {references.map((reference, index) => (
+              <div key={`${reference.name}-${index}`} className="space-y-2">
               <ImageCard
-                key={`${reference.name}-${index}`}
                 image={reference}
                 label={imageLabel(reference, index + 1)}
                 caption="只提供它承担的那部分信息，不当作第二张原图"
                 onRemove={() => onRemoveReference(index)}
               />
+              <label className="block text-sm">
+                参考图{index + 1}的分工
+                <input value={reference.note ?? ''} maxLength={2000} onChange={event => onReferenceNote(index, event.target.value)}
+                  placeholder="例如：只借用电弧的形态与颜色，不借用人物和背景"
+                  className="mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 dark:border-neutral-700" />
+              </label>
+              </div>
             ))}
           </div>
         )}

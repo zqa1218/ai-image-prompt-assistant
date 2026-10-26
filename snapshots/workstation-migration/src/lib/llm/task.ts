@@ -141,8 +141,8 @@ export function buildStageTask(input: TaskInput): string {
       }
       referenceIndex += 1
       return objectPlacement
-        ? `- 物体素材图${referenceIndex}（仅用于解析物体本身，输出不得提到来源）：${image.name}`
-        : `- 参考图${referenceIndex}：${image.name}`
+        ? `- 物体素材图${referenceIndex}（仅用于解析物体本身，输出不得提到来源）：${image.name}${image.note?.trim() ? `；分工：${image.note.trim()}` : ''}`
+        : `- 参考图${referenceIndex}：${image.name}${image.note?.trim() ? `；分工：${image.note.trim()}` : ''}`
     })
     const hasReference = taskImages.some((image) => image.role === 'reference')
     blocks.push(objectPlacement
@@ -172,7 +172,9 @@ export function buildStageTask(input: TaskInput): string {
     blocks.push(`## 用户补充要求\n${input.notes.map((n) => `- ${n}`).join('\n')}`)
   }
 
-  if (input.focus) {
+  if (input.focus && input.stage.id === 'detail') {
+    blocks.push(`## 本轮辅助分析任务\n${input.focus}\n只完成下方输出要求，不生成最终修图提示词。`)
+  } else if (input.focus) {
     if (input.artifact?.prompt.trim()) {
       blocks.push(`## 上一版完整提示词（仅用于定点修正）\n${input.artifact.prompt.trim()}`)
     }
@@ -277,7 +279,7 @@ export function buildExtractTask(input: TaskInput): string {
   let referenceIndex = 0
   const lines = references.map((image) => {
     referenceIndex += 1
-    return `- 参考图${referenceIndex}：${image.name}`
+    return `- 参考图${referenceIndex}：${image.name}${image.note?.trim() ? `；分工：${image.note.trim()}` : ''}`
   })
 
   const blocks = [

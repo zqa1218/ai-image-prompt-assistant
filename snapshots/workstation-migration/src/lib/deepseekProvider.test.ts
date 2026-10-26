@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { deepseekProvider } from './deepseekProvider.ts'
-import { REFINE } from '../workflows/index.ts'
+import { REFINE, RECOMPOSE } from '../workflows/index.ts'
+import { parseSections } from './promptSections.ts'
 import type { WizardContext } from './wizardTypes.ts'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -19,6 +20,48 @@ it('未选置入物体时保留参考图编号，只有置入物体会清理来�
   const placed = await deepseekProvider.compose({ ...ctx, intake: { ...ctx.intake, taskType: '置入物体' } })
   expect(placed.prompt).not.toMatch(/REFERENCE|参考图/)
   expect(placed.prompt).toContain('右后方放置灰色岩石')
+  const withReference = await deepseekProvider.compose({ ...ctx, intake: { ...ctx.intake, taskType: '置入物体', referencePolicy: '参考图参与' } })
+  expect(withReference.prompt).toBe(prompt)
+})
+
+it('重构结果保留正负面分块、多方向与完整参数行，不被 schema 丢弃', async () => {
+  const data = {
+    prompt: 'a studio portrait',
+    sections: [
+      { key: '正面提示词 · 方向1', body: 'a studio portrait [cite:1]' },
+      { key: '正面提示词 · 方向2', body: 'a moonlit portrait' },
+      { key: '负面提示词', body: 'blur, watermark' },
+    ],
+    params: ['--ar 3:4', '--stylize 250'],
+    checklist: ['检查人物'],
+  }
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+    choices: [{ message: { content: JSON.stringify(data) } }], usage: {},
+  }))))
+  const ctx: WizardContext = {
+    workflow: RECOMPOSE, intake: {}, images: [], analysis: '', options: [], selectedOptionId: null,
+    notes: [], artifact: null, selectedReferenceItems: [],
+  }
+  const artifact = await deepseekProvider.compose(ctx)
+  const sections = parseSections(artifact.prompt)!
+  expect(sections[0]).toEqual({ key: '完整一行（可直接粘贴）', body: 'a studio portrait --ar 3:4 --stylize 250 --no blur, watermark' })
+  expect(sections.find(s => s.key === '正面提示词 · 方向2')?.body).toBe('a moonlit portrait')
+  expect(sections.find(s => s.key === '负面提示词')?.body).toBe('blur, watermark')
+  expect(artifact.prompt).not.toContain('[cite:')
+  expect(artifact.params).toEqual(data.params)
+  expect(artifact.checklist).toEqual(data.checklist)
+})
+
+it('待定项调用使用专属输出契约，不混入最终提示词改写要求', async () => {
+  let body: any
+  vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+    body = JSON.parse(init.body)
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"items":[]}' } }], usage: {} }))
+  }))
+  await deepseekProvider.askChecklist!({ workflow: REFINE, intake: {}, images: [], analysis: '', options: [], selectedOptionId: null, notes: [], artifact: null, selectedReferenceItems: [] })
+  expect(JSON.stringify(body.messages)).toContain('【待定项清单】')
+  expect(JSON.stringify(body.messages)).toContain('recommended')
+  expect(JSON.stringify(body.messages)).not.toContain('最终仍要重写')
 })
 
 it('所有阶段和 JSON 重试共用图片会话，且每轮保留两份 Skill 和完整输入', async () => {

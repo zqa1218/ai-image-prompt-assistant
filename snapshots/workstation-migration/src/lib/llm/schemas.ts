@@ -23,6 +23,7 @@ export type RawDirections = z.infer<typeof directionsSchema>
 
 export const artifactSchema = z.object({
   prompt: z.string().min(1),
+  sections: z.array(z.object({ key: z.string().min(1), body: z.string().min(1) })).optional(),
   channel: z.string().optional(),
   params: z.array(z.string()).optional(),
   checklist: z.array(z.string()).optional(),
