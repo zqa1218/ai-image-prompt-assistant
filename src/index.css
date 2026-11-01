@@ -1,0 +1,246 @@
+@import "tailwindcss";
+
+/* 深色用 class 策略：应用本身就是深色工具，不跟随系统 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * 视觉语言：科技透明质感
+ * 取样自「夏三七的修图轮椅」的浮层（真实像素，不是估的）：
+ *   面板底 #0F1219 / 抬升面 #202329 / 描边 #202329 / 主文字 #E7EAEF
+ *   强调蓝 #6EA0ED / 轨道 #31333A
+ * 取舍：只在最外层用玻璃（blur），内部一律不透明，保证小字号不发虚；
+ * 不做渐变 wash、不堆满屏同款卡片、不用全大写 label。
+ */
+@theme {
+  --color-ink-900: #0b0e14;
+  --color-ink-850: #0f1219;
+  --color-ink-800: #14171f;
+  --color-ink-750: #191d26;
+  --color-ink-700: #202329;
+  --color-line: #242832;
+  --color-line-strong: #313641;
+
+  --color-fg: #e7eaef;
+  --color-fg-muted: #9aa1ae;
+  --color-fg-dim: #9299a7;
+
+  --color-accent: #f0a6c0;
+  --color-accent-soft: #30212d;
+  --color-warn: #e5b567;
+  --color-ok: #6fcf97;
+
+  --radius-panel: 16px;
+  --radius-card: 12px;
+  --radius-control: 10px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-900);
+  color: var(--color-fg);
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 外层玻璃：全项目唯一使用 backdrop-filter 的地方 */
+.glass-panel {
+  background: rgba(15, 18, 25, 0.72);
+  backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+/* 状态不只靠颜色：选中行同时有左侧 2px 亮条 */
+.surface-row {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  background: var(--color-ink-800);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.surface-row[data-active='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/*
+ * 禁用态统一处理。
+ * 换成强调色以后，`bg-accent + text-ink-900` 再叠加 opacity-50 会糊成灰底灰字；
+ * 这里把禁用态钉成「暗面 + 次级文字」：对比度约 6.3:1，且与强调色无关。
+ */
+button:disabled:not([aria-pressed='true']),
+fieldset:disabled button:not([aria-pressed='true']) {
+  background-color: var(--color-ink-750) !important;
+  color: var(--color-fg-muted) !important;
+  border-color: var(--color-line) !important;
+  opacity: 1 !important;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-row {
+    transition: none;
+  }
+}
+
+/*
+ * 窄模式（伴随面板）：360–420px 单列，不出现横向滚动。
+ * 挂在 html[data-shell] 上，这样外壳、页签和内容区能一起收，
+ * 且不影响任务状态（布局与任务是两套 store）。
+ */
+
+[hidden] { display: none !important; }
+* { box-sizing: border-box; }
+button, summary, select { cursor: pointer; }
+button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+button, input, select, textarea { max-width: 100%; }
+/* 极光底：极淡的粉/靛光晕，铺在内容之下。
+   不是装饰——纯色底上的 blur 看不出来，玻璃面板会显得又黑又平。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(42rem 30rem at 18% -8%, rgba(240, 166, 192, 0.11), transparent 70%),
+    radial-gradient(36rem 26rem at 92% 4%, rgba(110, 160, 237, 0.08), transparent 72%),
+    radial-gradient(40rem 30rem at 62% 108%, rgba(240, 166, 192, 0.06), transparent 70%);
+}
+.app-shell {
+  min-height: 100%;
+  position: relative;
+  z-index: 1;
+  /* 光晕直接铺在外壳背景上：单靠 body::before 会被上层的实色背景盖住 */
+  background:
+    radial-gradient(46rem 32rem at 16% -10%, rgba(240, 166, 192, 0.13), transparent 70%),
+    radial-gradient(38rem 26rem at 94% 2%, rgba(110, 160, 237, 0.09), transparent 72%),
+    radial-gradient(44rem 32rem at 64% 110%, rgba(240, 166, 192, 0.07), transparent 70%),
+    var(--color-ink-900);
+  background-attachment: fixed;
+}
+.shell-header { position: sticky; top: 0; z-index: 20; border-radius: 0; border-inline: 0; }
+.shell-nav { max-width: 1200px; margin: auto; display: flex; align-items: center; gap: 12px; padding: 12px 24px; }
+.shell-title { font-size: 15px; font-weight: 650; margin-right: 12px; white-space: nowrap; }
+.primary-nav { display: flex; gap: 4px; min-width: 0; }
+.primary-nav button { border-radius: 8px; padding: 8px 12px; font-size: 14px; white-space: nowrap; color: var(--color-fg-muted); }
+.primary-nav button[aria-current='page'] { background: var(--color-accent-soft); color: var(--color-accent); }
+.window-menu { margin-left: auto; position: relative; flex-shrink: 0; font-size: 12px; }
+.window-menu summary { padding: 8px; }
+.window-popover { position: absolute; top: 100%; right: 0; width: 230px; display: grid; gap: 12px; padding: 16px; background: var(--color-ink-800); border: 1px solid var(--color-line-strong); border-radius: 12px; box-shadow: 0 12px 32px #0008; }
+.shell-toggle { flex-shrink: 0; padding: 7px 10px; border: 1px solid var(--color-line-strong); border-radius: 8px; font-size: 12px; }
+.shell-main { max-width: 1200px; margin: auto; padding: 24px; }
+.transport-bar { max-width: 1200px; margin: auto; padding: 0 24px 10px; }
+.transport-primary { display: flex; align-items: center; gap: 8px; }
+.transport-primary > select { width: 200px; }
+/* 窄模式：通道与预设各占一半，思考等级换行到下一行，避免横向溢出 */
+html[data-shell="narrow"] .transport-bar { padding: 0 10px 8px; }
+html[data-shell="narrow"] .transport-primary { flex-wrap: wrap; }
+
+.transport-bar select { min-width: 0; border: 1px solid var(--color-line-strong); border-radius: 8px; padding: 6px 8px; font-size: 12px; background: var(--color-ink-800); }
+.transport-more { position: relative; font-size: 12px; flex-shrink: 0; }
+.transport-more > div { position: absolute; top: 100%; right: 0; width: 260px; box-shadow: 0 12px 32px #0008; }
+.transport-more select { display: block; width: 100%; margin-top: 8px; }
+/* 字号与字重层级：之前所有文字挤在 12–14px，读不出主次 */
+.section-title { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; font-weight: 660; letter-spacing: -0.01em; color: var(--color-fg); }
+.surface-row h2, .surface-row h3 { letter-spacing: -0.01em; }
+/* 卡片三层：外壳玻璃 → 卡片不透明 → 卡内嵌套行更暗 */
+.surface-row { background: var(--color-ink-800); }
+.surface-row .surface-row { background: var(--color-ink-850); }
+.intake-layout { display: grid; gap: 16px; min-width: 0; }
+.intake-layout > * { min-width: 0; }
+.intake-original { order: 0; }
+.intake-requirement { order: 1; }
+.intake-constraints { order: 2; }
+.intake-references { order: 3; }
+.intake-format { order: 4; }
+.intake-research { order: 5; }
+.intake-rules { order: 6; }
+.disclosure > summary { font-size: 14px; font-weight: 550; }
+.disclosure > summary > span { font-weight: 400; color: var(--color-fg-muted); font-size: 12px; margin-left: 8px; overflow-wrap: anywhere; }
+.template-chip { border: 1px solid var(--color-line-strong); border-radius: 8px; padding: 7px 10px; font-size: 12px; }
+.chip-all { border-style: dashed; color: var(--color-fg-muted); }
+.template-chip:hover, .template-chip[aria-pressed='true'] { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent); }
+.wizard-actions { position: sticky; bottom: 0; z-index: 10; background: var(--color-ink-850); border-top: 1px solid var(--color-line-strong); padding: 12px 0; }
+pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+@media (min-width: 960px) {
+  html:not([data-shell='narrow']) .intake-layout { grid-template-columns: minmax(0, 1fr) 310px; align-items: start; }
+  html:not([data-shell='narrow']) .intake-requirement { grid-column: 1; grid-row: 1; }
+  html:not([data-shell='narrow']) .intake-original { grid-column: 2; grid-row: 1; }
+  html:not([data-shell='narrow']) .intake-constraints { grid-column: 1; grid-row: 2; }
+  html:not([data-shell='narrow']) .intake-references { grid-column: 2; grid-row: 2 / span 3; }
+  html:not([data-shell='narrow']) .intake-format { grid-column: 1; grid-row: 3; }
+  html:not([data-shell='narrow']) .intake-research { grid-column: 1; grid-row: 4; }
+  html:not([data-shell='narrow']) .intake-rules { grid-column: 1 / -1; }
+}
+html[data-shell='narrow'] .shell-title { display: none; }
+html[data-shell='narrow'] .shell-main { padding: 16px 12px; }
+html[data-shell='narrow'] .shell-nav { padding: 8px; gap: 4px; }
+html[data-shell='narrow'] .primary-nav button { padding: 8px 7px; font-size: 12px; }
+html[data-shell='narrow'] .transport-bar { padding: 0 12px 10px; }
+html[data-shell='narrow'] .transport-primary > select {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  font-size: 11px;
+  /* 窄版空间有限：长预设名用省略号收尾，不要硬切在半截单词上 */
+  text-overflow: ellipsis;
+}
+html[data-shell='narrow'] .shell-toggle { padding: 6px 8px; }
+@media (max-width: 640px) {
+ .shell-title { display: none; }
+ .shell-nav { padding: 8px; gap: 4px; }
+ .primary-nav button { padding: 8px 6px; font-size: 12px; }
+ .shell-main { padding: 16px 12px; }
+ .transport-bar { padding: 0 12px 10px; }
+ .transport-primary > select { flex: 1; width: 0; }
+}
+
+/* —— 第二层：间距节奏 / 强调色收敛 / 输入控件统一 —— */
+/* 卡片内边距统一成一套（之前 p-3/p-4/mt-3 混用，看着松散） */
+.surface-row { padding: 20px; }
+.section-title { margin-bottom: 12px; align-items: center; }
+/* 所有“被选中”的东西用同一种表达：强调色描边 + 柔底。
+   之前 chip / 页签 / 按钮各写一套，粉色反而到处散落、不突出。 */
+[aria-pressed='true'] {
+  border-color: var(--color-accent) !important;
+  background: var(--color-accent-soft) !important;
+  color: var(--color-fg) !important;
+}
+/* 输入类控件统一底色与描边，聚焦时才出现强调色 */
+input:not([type='checkbox']):not([type='radio']),
+textarea,
+select {
+  background: var(--color-ink-850);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+}
+input:not([type='checkbox']):not([type='radio']):focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-accent);
+  outline: none;
+}

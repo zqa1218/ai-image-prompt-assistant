@@ -1,0 +1,81 @@
+{
+  "id": "pose",
+  "name": "人体姿势优化",
+  "summary": "上传原图，先做一份姿势版分析（全身还是半身、重心在哪、还能怎么动），再选优化方案，最后从白膜库里挑合适的骨架图并下载。终点是选到图并导出。",
+  "outputContract": "complete-cn",
+  "sharedAssets": [],
+  "assets": ["pose-analysis"],
+  "stages": [
+    {
+      "id": "intake",
+      "title": "接收",
+      "intent": "接收原图与想解决的问题：现在的姿势哪里不对（僵硬、重心不稳、手没处放、张力不足），以及必须保留的部分。",
+      "mode": "form",
+      "thinking": { "mode": "disabled" },
+      "fields": [
+        {
+          "key": "requirement",
+          "label": "想解决的问题",
+          "kind": "textarea",
+          "group": "requirement",
+          "required": true,
+          "placeholder": "例：现在的站姿重心偏左、手没地方放，想要重心稳定的交叉站姿，手自然垂放"
+        },
+        {
+          "key": "keep",
+          "label": "保持不变",
+          "kind": "multi",
+          "group": "constraint",
+          "required": false,
+          "options": [
+            "人物身份与脸",
+            "发型与发色",
+            "服装与道具",
+            "构图与裁切",
+            "机位与透视",
+            "曝光与光影",
+            "景深与颗粒"
+          ]
+        },
+        {
+          "key": "poseHint",
+          "label": "姿势偏好（可选）",
+          "kind": "text",
+          "group": "requirement",
+          "required": false,
+          "placeholder": "例：想要更有张力的弓步；不要正面呆站"
+        }
+      ]
+    },
+    {
+      "id": "analyze",
+      "title": "原图分析",
+      "intent": "做一份姿势版分析：先判全身还是半身，再写躯干朝向、骨盆与肩线、四肢与重心、场景可动空间、镜头裁切。比精修线轻，只写看得见的事实。",
+      "mode": "auto",
+      "thinking": { "mode": "disabled" }
+    },
+    {
+      "id": "direction",
+      "title": "方案",
+      "intent": "基于分析给几个姿势优化方案：改成什么动作、重心怎么挪、支撑腿与手臂怎么安排、视角怎么选，各自的风险是什么。",
+      "mode": "choice",
+      "thinking": { "mode": "enabled", "effort": "low" },
+      "minOptions": 3,
+      "maxOptions": 4
+    },
+    {
+      "id": "pose",
+      "title": "选姿势",
+      "intent": "按方案与标签从白膜库里挑 1–3 张骨架图；可以让模型在标签白名单内推荐组合。",
+      "mode": "gallery",
+      "thinking": { "mode": "disabled" }
+    },
+    {
+      "id": "export",
+      "title": "下载",
+      "intent": "把选中的白膜原图复制到指定目录。",
+      "mode": "free",
+      "thinking": { "mode": "disabled" }
+    }
+  ]
+}
