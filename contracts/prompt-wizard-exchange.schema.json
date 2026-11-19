@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:mjstudio:prompt-wizard-exchange:1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "workflowId", "artifact", "context", "target", "selectedParameterIndex", "images"],
+  "properties": {
+    "schemaVersion": { "const": "prompt-wizard-exchange/1" },
+    "workflowId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+    "artifact": {
+      "type": "object", "additionalProperties": false, "required": ["prompt", "channel"],
+      "properties": {
+        "prompt": { "type": "string", "maxLength": 32000 },
+        "channel": { "type": "string", "maxLength": 4000 },
+        "params": { "$ref": "#/definitions/lines" },
+        "checklist": { "$ref": "#/definitions/lines" }
+      }
+    },
+    "context": {
+      "type": "object", "additionalProperties": false, "required": ["analysis", "requirements", "notes", "direction"],
+      "properties": {
+        "analysis": { "type": "string", "maxLength": 64000 },
+        "requirements": { "type": "object", "maxProperties": 100, "additionalProperties": { "type": "string", "maxLength": 8000 } },
+        "notes": { "$ref": "#/definitions/lines" },
+        "direction": { "type": "string", "maxLength": 16000 }
+      }
+    },
+    "target": {
+      "oneOf": [ { "type": "null" }, {
+        "type": "object", "additionalProperties": false, "required": ["taskId", "revision"],
+        "properties": { "taskId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" }, "revision": { "type": "integer", "minimum": 1 } }
+      } ]
+    },
+    "selectedParameterIndex": { "type": ["integer", "null"], "minimum": 0 },
+    "images": {
+      "type": "array", "maxItems": 32,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["assetId", "role", "dataUrl"],
+        "properties": {
+          "assetId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+          "role": { "enum": ["base", "image_prompt", "style_reference", "edit_reference", "character_reference", "mask"] },
+          "dataUrl": { "type": "string", "maxLength": 40000000 },
+          "note": { "type": "string", "maxLength": 12000 },
+          "photoshop": { "$ref": "#/definitions/photoshop" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "lines": { "type": "array", "maxItems": 100, "items": { "type": "string", "maxLength": 4000 } },
+    "bounds": {
+      "type": "object", "additionalProperties": false, "required": ["left", "top", "right", "bottom"],
+      "properties": {
+        "left": { "type": "integer", "minimum": 0 }, "top": { "type": "integer", "minimum": 0 },
+        "right": { "type": "integer", "minimum": 1 }, "bottom": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "photoshop": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sessionId", "documentId", "documentName", "canvasWidth", "canvasHeight", "captureScope", "selectionBounds", "maskAssetId", "placement"],
+      "properties": {
+        "sessionId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,128}$" },
+        "documentId": { "type": "integer", "minimum": 1 },
+        "documentName": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "canvasWidth": { "type": "integer", "minimum": 1 }, "canvasHeight": { "type": "integer", "minimum": 1 },
+        "captureScope": { "enum": ["canvas", "selection"] },
+        "selectionBounds": { "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/bounds" }] },
+        "maskAssetId": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+        "placement": { "enum": ["fit_canvas", "fit_selection", "new_document"] }
+      }
+    }
+  }
+}

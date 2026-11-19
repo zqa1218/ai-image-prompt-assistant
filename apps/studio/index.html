@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>MJ / Banana 创作工作台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body data-mobile-pane="editor">
+  <header class="app-header">
+    <div class="brand"><strong>MJ Studio</strong><span>本机协作版</span></div>
+    <div class="mode-switch" role="group" aria-label="任务模式">
+      <button type="button" class="mode-btn is-active" data-mode="mj_web" aria-pressed="true">MJ 官网</button>
+      <button type="button" class="mode-btn" data-mode="banana_api" aria-pressed="false">Banana API</button>
+    </div>
+    <div class="header-spacer"></div>
+    <span class="connection" id="connectionState">连接中</span>
+    <button type="button" class="button secondary compact" id="returnWizardButton" hidden>返回提示词助手</button>
+    <input type="file" id="wizardImportFile" accept=".json,application/json" hidden>
+    <button type="button" class="button secondary compact" id="wizardImportButton" data-mutation>导入提示词产物</button>
+    <button type="button" class="button secondary compact" id="refreshButton">刷新任务</button>
+  </header>
+
+  <nav class="mobile-tabs" aria-label="移动端面板">
+    <button type="button" data-pane="editor" aria-pressed="true">输入与设置</button>
+    <button type="button" data-pane="workspace" aria-pressed="false">任务与结果</button>
+  </nav>
+
+  <main class="app-main">
+    <aside class="editor-pane pane" id="editorPane" aria-label="任务输入">
+      <form id="taskForm" novalidate>
+        <div class="section-heading">
+          <div><h1 id="editorTitle">新建 MJ 官网任务</h1><p id="editorSubtitle">准备内容，人工确认后再去官网提交。</p></div>
+          <button type="button" class="text-button" id="resetEditorButton">清空</button>
+        </div>
+
+        <label class="field"><span>创作需求</span><textarea id="intentInput" rows="3" maxlength="32000" placeholder="说明希望得到什么、必须保留什么。"></textarea></label>
+        <label class="field"><span>最终提示词 <b aria-hidden="true">*</b></span><textarea id="promptInput" rows="6" maxlength="32000" required placeholder="填写将复制到官网的最终提示词。参数请使用下方字段。"></textarea><small>向导原文可保留自带的 MJ 参数。另填结构化设置时，请先从正文移除参数。</small></label>
+
+        <fieldset class="field-group" id="mjSettings">
+          <legend>任务设置</legend>
+          <div class="form-grid two">
+            <label class="field"><span>任务方式</span><select id="operationInput"><option value="create">创作</option><option value="edit">编辑 / 合成</option></select></label>
+            <label class="field"><span>模型版本</span><input id="modelVersionInput" type="text" list="modelVersions" maxlength="40" placeholder="例如 8.2；留空则官网核对"><datalist id="modelVersions"><option value="8.2"><option value="8.1"><option value="7"><option value="6.1"><option value="6"></datalist></label>
+            <label class="field"><span>画面比例</span><input id="aspectRatioInput" type="text" inputmode="numeric" maxlength="20" placeholder="例如 2:3"></label>
+            <label class="field"><span>Raw</span><select id="rawInput"><option value="">未指定</option><option value="true">开启</option><option value="false">关闭</option></select></label>
+            <label class="field"><span>Stylize</span><input id="stylizeInput" type="number" min="0" max="1000" step="1" placeholder="未指定"></label>
+            <label class="field"><span>Chaos</span><input id="chaosInput" type="number" min="0" max="100" step="1" placeholder="未指定"></label>
+            <label class="field"><span>Weird</span><input id="weirdInput" type="number" min="0" max="3000" step="1" placeholder="未指定"></label>
+            <label class="field"><span>Seed</span><input id="seedInput" type="number" min="0" max="4294967295" step="1" placeholder="未指定"></label>
+            <label class="field"><span>GPU 速度</span><select id="speedInput"><option value="">官网当前值</option><option value="fast">Fast</option><option value="relax">Relax</option><option value="turbo">Turbo</option></select></label>
+            <label class="field"><span>分辨率</span><select id="resolutionInput"><option value="">官网当前值</option><option value="sd">SD</option><option value="hd">HD</option></select></label>
+          </div>
+          <div class="capability-note" id="capabilityNote"></div>
+        </fieldset>
+
+        <fieldset class="field-group" id="bananaSettings" hidden>
+          <legend>Banana API 草稿</legend>
+          <div class="form-grid two">
+            <label class="field"><span>服务商 ID</span><input id="providerInput" type="text" maxlength="128" placeholder="尚未确定"></label>
+            <label class="field"><span>模型 ID</span><input id="bananaModelInput" type="text" maxlength="200" placeholder="尚未确定"></label>
+            <label class="field"><span>比例</span><input id="bananaAspectInput" type="text" maxlength="20" placeholder="例如 2:3"></label>
+            <label class="field"><span>分辨率</span><input id="bananaResolutionInput" type="text" maxlength="80" placeholder="由服务商定义"></label>
+          </div>
+          <p class="inline-notice warning">当前只保存草稿和导出提示词，不会发起 API 请求。</p>
+        </fieldset>
+
+        <fieldset class="field-group">
+          <legend>参考图与素材</legend>
+          <label class="upload-target" for="referenceFiles" id="referenceDrop">
+            <strong>选择或拖入图片</strong><span>PNG、JPEG、WebP；MJ 官网生产素材单张不超过 10 MiB。</span>
+          </label>
+          <input class="visually-hidden" id="referenceFiles" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+          <div class="asset-list" id="assetList"><p class="empty-inline">尚未添加素材。</p></div>
+        </fieldset>
+
+        <div class="form-message" id="formMessage" role="alert" hidden></div>
+        <div class="sticky-actions">
+          <button type="submit" class="button primary" id="saveTaskButton">创建任务</button>
+          <span id="editRevisionHint">保存后进入待确认状态。</span>
+        </div>
+      </form>
+    </aside>
+
+    <section class="workspace-pane pane" id="workspacePane" aria-label="任务与结果">
+      <aside class="task-rail">
+        <div class="rail-header"><h2>任务</h2><span id="taskCount">0</span></div>
+        <div class="task-list" id="taskList"><p class="empty-state">正在读取任务…</p></div>
+      </aside>
+      <article class="task-detail" id="taskDetail" aria-live="polite">
+        <div class="welcome-state"><h2>从左侧开始</h2><p>填写提示词和设置，建立一个可追溯的任务。打开官网不会被记为已提交。</p></div>
+      </article>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

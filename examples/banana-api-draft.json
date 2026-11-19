@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "example_banana_001",
+  "revision": 1,
+  "createdAt": "2026-11-12T09:00:00+08:00",
+  "mode": "banana_api",
+  "operation": "edit",
+  "prompt": {
+    "intent": "保留原构图，提升服装质感；此文件为未配置服务商的虚构草稿。",
+    "text": "以底图为编辑基准，保留人物身份、姿势、构图与背景，仅增强服装织物细节，保持原有光线方向。",
+    "source": "prompt_wizard",
+    "workflowId": "refine"
+  },
+  "references": [
+    {
+      "assetId": "example_base_001",
+      "path": "assets/base-001.png",
+      "mediaType": "image/png",
+      "width": 1200,
+      "height": 1800,
+      "bytes": 123456,
+      "sha256": null,
+      "role": "base",
+      "source": "upload",
+      "analysisOnly": false
+    }
+  ],
+  "settings": {
+    "providerId": null,
+    "modelId": null,
+    "aspectRatio": "2:3",
+    "resolution": null
+  },
+  "confirmation": null,
+  "photoshopContext": null
+}

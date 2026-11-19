@@ -1,0 +1,12 @@
+node_modules/
+.workbench/
+.test-output/
+baselines/
+*.log
+apps/prompt-wizard-next/dist-next/
+
+release/
+apps/prompt-wizard-installed/
+.env
+.env.local
+*.exe

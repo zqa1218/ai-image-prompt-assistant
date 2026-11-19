@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "example_mj_001",
+  "revision": 1,
+  "createdAt": "2026-11-12T09:00:00+08:00",
+  "mode": "mj_web",
+  "operation": "create",
+  "prompt": {
+    "intent": "参考原图构图创作森林人像，偏自然光；此文件为虚构协议示例。",
+    "text": "An editorial portrait in a quiet forest, soft natural light, realistic fabric texture, restrained colors",
+    "source": "prompt_wizard",
+    "workflowId": "recompose"
+  },
+  "references": [
+    {
+      "assetId": "example_reference_001",
+      "path": "assets/reference-001.png",
+      "mediaType": "image/png",
+      "width": 1200,
+      "height": 1800,
+      "bytes": 123456,
+      "sha256": null,
+      "role": "image_prompt",
+      "source": "photoshop",
+      "analysisOnly": false
+    }
+  ],
+  "settings": {
+    "modelVersion": "8.2",
+    "aspectRatio": "2:3",
+    "raw": true,
+    "stylize": 150,
+    "chaos": 0,
+    "weird": 0,
+    "seed": 0,
+    "speed": "fast",
+    "resolution": "sd",
+    "extraParameters": "",
+    "websiteChecklist": [
+      "用户在官网核对可用模型版本及参数；本示例不代表账号能力已验证。",
+      "上传 reference-001.png 并指定为 Image Prompt。",
+      "核对官网个性化和隐私设置，符合本次意图后亲自提交。"
+    ]
+  },
+  "confirmation": null,
+  "photoshopContext": {
+    "sessionId": "example_ps_session",
+    "documentId": 42,
+    "documentName": "example-portrait.psd",
+    "canvasWidth": 2400,
+    "canvasHeight": 3600,
+    "captureAssetId": "example_reference_001",
+    "captureScope": "canvas",
+    "selectionBounds": null,
+    "maskAssetId": null,
+    "placement": "fit_canvas"
+  }
+}

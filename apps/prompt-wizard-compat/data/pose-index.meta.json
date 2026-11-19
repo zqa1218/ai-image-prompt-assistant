@@ -1,0 +1,14 @@
+{
+  "root": "W:/dsh/ref-libs",
+  "builtAt": "2026-11-01T15:44:24.330Z",
+  "counts": {
+    "total": 4345,
+    "pose": 1439,
+    "costume": 1407,
+    "portrait": 1499,
+    "adult": 949
+  },
+  "tags": 128,
+  "sampleProblems": [],
+  "sizeBytes": 1642063
+}

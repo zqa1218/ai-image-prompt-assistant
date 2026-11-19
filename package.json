@@ -1,0 +1,28 @@
+{
+  "name": "mj-banana-workbench",
+  "version": "0.4.0-dev.1",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "installed:prepare": "node scripts/prepare-installed-workbench.mjs",
+    "installed:pack": "npm run installed:prepare && node apps/prompt-wizard-next/node_modules/electron-builder/out/cli/cli.js --config electron-builder.installed.yml --win portable nsis --x64",
+    "installed:dir": "npm run installed:prepare && node apps/prompt-wizard-next/node_modules/electron-builder/out/cli/cli.js --config electron-builder.installed.yml --win dir --x64",
+    "installed:smoke": "node scripts/smoke-installed-package.mjs",
+    "installed:test": "node scripts/test-installed-runtime.mjs",
+    "baseline:import": "node scripts/import-baselines.mjs",
+    "baseline:verify": "node scripts/import-baselines.mjs --verify",
+    "compat:prepare": "node scripts/prepare-compat.mjs",
+    "compat:preview": "node scripts/prompt-wizard-preview.mjs",
+    "wizard:build": "npm --prefix apps/prompt-wizard-next run build",
+    "wizard:preview": "node scripts/prompt-wizard-next-preview.mjs",
+    "wizard:test": "npm --prefix apps/prompt-wizard-next test",
+    "candidate:pack": "npm run wizard:build && node apps/prompt-wizard-next/node_modules/electron-builder/out/cli/cli.js --config electron-builder.candidate.yml --win portable nsis --x64",
+    "candidate:dir": "npm run wizard:build && node apps/prompt-wizard-next/node_modules/electron-builder/out/cli/cli.js --config electron-builder.candidate.yml --win dir --x64",
+    "candidate:smoke": "node scripts/smoke-candidate-package.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "workbench": "node apps/workbench/cli.mjs",
+    "studio": "node apps/workbench/server.mjs"
+  },
+  "dependencies": { "ajv": "8.20.0", "ajv-formats": "3.0.1", "ws": "8.22.2" }
+}

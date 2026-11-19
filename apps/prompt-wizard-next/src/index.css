@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* 固定深色主题：dark: 变体跟随 <html class="dark">，不再随系统浅色切换。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * 主题色板。neutral 换成偏冷的石墨灰，所有原有 neutral-* 类自动套用；
+ * accent 是唯一的强调色（主按钮、当前步骤、选中项）。
+ */
+@theme {
+  --color-neutral-50: #f4f6f9;
+  --color-neutral-100: #e6e9ef;
+  --color-neutral-200: #cfd4dd;
+  --color-neutral-300: #b0b8c5;
+  --color-neutral-400: #8f98aa;
+  --color-neutral-500: #707a8d;
+  --color-neutral-600: #555e6f;
+  --color-neutral-700: #3b414d;
+  --color-neutral-800: #282c35;
+  --color-neutral-900: #1c1f26;
+  --color-neutral-950: #14161b;
+
+  --color-accent-300: #f8c29e;
+  --color-accent-400: #f5a06a;
+  --color-accent-500: #f08a4b;
+  --color-accent-600: #d8733a;
+  --color-accent-950: #2b1a10;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-neutral-950);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent-500) 35%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent-400);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-700) transparent;
+}

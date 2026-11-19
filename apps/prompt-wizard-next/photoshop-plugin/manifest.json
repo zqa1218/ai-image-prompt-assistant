@@ -1,0 +1,82 @@
+{
+  "manifestVersion": 5,
+  "id": "com.mjstudio.candidate.photoshop-link",
+  "name": "MJ Studio Candidate Link",
+  "version": "0.2.0",
+  "main": "index.html",
+  "host": {
+    "app": "PS",
+    "minVersion": "25.0.0",
+    "data": {
+      "apiVersion": 2,
+      "loadEvent": "startup"
+    }
+  },
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "mjStudioCandidateLink",
+      "label": {
+        "default": "MJ Studio Candidate Link"
+      },
+      "minimumSize": {
+        "width": 180,
+        "height": 90
+      },
+      "preferredDockedSize": {
+        "width": 240,
+        "height": 120
+      },
+      "preferredFloatingSize": {
+        "width": 260,
+        "height": 130
+      },
+      "icons": [
+        {
+          "width": 23,
+          "height": 23,
+          "path": "icons/icon@1x.png",
+          "scale": [
+            1
+          ],
+          "theme": [
+            "all"
+          ]
+        },
+        {
+          "width": 23,
+          "height": 23,
+          "path": "icons/icon@2x.png",
+          "scale": [
+            2
+          ],
+          "theme": [
+            "all"
+          ]
+        }
+      ]
+    }
+  ],
+  "requiredPermissions": {
+    "localFileSystem": "fullAccess",
+    "network": {
+      "domains": ["ws://127.0.0.1", "ws://localhost"]
+    }
+  },
+  "icons": [
+    {
+      "width": 48,
+      "height": 48,
+      "path": "icons/icon.png",
+      "scale": [
+        1
+      ],
+      "theme": [
+        "all"
+      ],
+      "species": [
+        "generic"
+      ]
+    }
+  ]
+}

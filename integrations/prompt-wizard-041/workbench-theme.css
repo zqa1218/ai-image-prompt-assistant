@@ -1,0 +1,213 @@
+/*
+ * 工作台版主题：石墨灰 + 橙色强调，覆盖 0.4.1 的颜色变量；
+ * 头部合成一行，分析来源收进一个标签；窄面板（收窄或窗口 ≤ 520px）用紧凑的行式布局。
+ * 由 scripts/prepare-installed-workbench.mjs 复制进 dist/assets，并在 workbench-link.css 之后加载。
+ */
+:root, :host {
+  --color-ink-900: #14161b;
+  --color-ink-850: #181a20;
+  --color-ink-800: #1c1f26;
+  --color-ink-750: #22252d;
+  --color-ink-700: #2a2e37;
+  --color-line: #2a2e37;
+  --color-line-strong: #3b414d;
+  --color-fg: #e6e9ef;
+  --color-fg-muted: #a7afbd;
+  --color-fg-dim: #8f98aa;
+  --color-accent: #f08a4b;
+  --color-accent-soft: #2b1d14;
+  --color-warn: #e5b567;
+  --radius-panel: 10px;
+  --radius-card: 8px;
+  --radius-control: 6px;
+  --pw-accent-strong: #f5a06a;
+}
+::selection { background: color-mix(in srgb, var(--color-accent) 35%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+
+/* 去掉粉色光晕，改成平整的石墨底色 */
+body::before { background: none; }
+.app-shell { background: var(--color-ink-900); }
+.glass-panel {
+  background: rgb(24 26 32 / 0.94);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.03), 0 8px 24px rgb(0 0 0 / 0.35);
+}
+.surface-row { box-shadow: none; }
+.surface-row[data-active=true] { box-shadow: inset 2px 0 0 var(--color-accent); }
+.rounded-xl { border-radius: var(--radius-card); }
+.primary-nav button[aria-current=page] { background: var(--color-accent-soft); color: var(--pw-accent-strong); font-weight: 600; }
+.text-accent { color: var(--pw-accent-strong); }
+.wizard-actions { background: rgb(24 26 32 / 0.96); backdrop-filter: blur(8px); }
+.bg-accent.text-ink-900 { font-weight: 600; }
+/* 步骤条：当前步骤按钮是 disabled，原样式会把它刷成灰色；这里恢复强调色 */
+ol button[aria-current=step]:disabled {
+  background-color: var(--color-accent) !important; color: var(--color-ink-900) !important;
+  border-color: transparent !important; cursor: default; font-weight: 600;
+}
+
+/* ── 头部：标题、导航、来源标签、窗口、收窄 合成一行 ── */
+.shell-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px max(24px, calc((100% - 1200px) / 2 + 24px));
+}
+.shell-header > .shell-nav { display: contents; }
+.shell-header .shell-title { order: 1; margin-right: 4px; }
+.shell-header .primary-nav { order: 2; min-width: 0; }
+.shell-header .primary-nav button { padding: 6px 10px; }
+.shell-header > .transport-bar { order: 3; margin: 0 0 0 auto; padding: 0; max-width: none; }
+.shell-header .window-menu { order: 4; margin-left: 0; }
+.shell-header .shell-toggle { order: 5; }
+.shell-header > p { order: 6; flex-basis: 100%; padding: 0; }
+.shell-header:not(:has(> .transport-bar)) .window-menu { margin-left: auto; }
+
+/* 来源标签 + 弹出面板（原来的三个下拉框收进这里） */
+.transport-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.transport-bar > p:not([role]) { display: none; }            /* “演示模式”提示并进标签 */
+.transport-bar > p[role=status] { order: 2; }
+.pw-source-chip {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 32px; max-width: 22rem;
+  padding: 0 10px 0 12px; border: 1px solid var(--color-line-strong); border-radius: 999px;
+  background: var(--color-ink-800); color: var(--color-fg); font-size: 12.5px; white-space: nowrap; cursor: pointer;
+}
+.pw-source-chip:hover { border-color: #566070; }
+.pw-source-chip[aria-expanded=true] { border-color: var(--color-accent); }
+.pw-source-chip .pw-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #3fbf8a; }
+.pw-source-chip[data-state=demo] .pw-dot { background: var(--color-warn); }
+.pw-source-chip[data-state=error] .pw-dot { background: #f06b6b; }
+.pw-source-chip[data-busy] .pw-dot { animation: pw-pulse 1.1s ease-in-out infinite; }
+.pw-source-chip .pw-chip-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.pw-source-chip .pw-chip-tag { flex: none; padding: 1px 6px; border-radius: 4px; background: #3a2e18; color: var(--color-warn); font-size: 11px; }
+.pw-source-chip svg { flex: none; opacity: .7; }
+@keyframes pw-pulse { 50% { opacity: .3; } }
+
+html:not([data-pw-source=open]) .transport-bar:has(.pw-source-chip) > .transport-primary { display: none; }
+.transport-bar:has(.pw-source-chip) > .transport-primary {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+  display: grid; grid-template-columns: 1fr; gap: 8px;
+  width: min(20rem, calc(100vw - 24px)); padding: 12px;
+  border: 1px solid var(--color-line-strong); border-radius: var(--radius-panel);
+  background: var(--color-ink-800); box-shadow: 0 16px 40px rgb(0 0 0 / 0.55);
+}
+.transport-bar:has(.pw-source-chip) > .transport-primary::before {
+  content: "分析来源"; font-size: 13px; font-weight: 600; color: var(--color-fg);
+}
+.transport-bar:has(.pw-source-chip) > .transport-primary > select {
+  width: 100%; flex: none; min-height: 34px; padding: 6px 8px; font-size: 13px;
+}
+.transport-bar:has(.pw-source-chip) .transport-more > summary { display: none; }
+.transport-bar:has(.pw-source-chip) .transport-more > div {
+  position: static; width: auto; box-shadow: none; padding: 0; border: 0; background: none;
+}
+.transport-bar:has(.pw-source-chip) .transport-more button {
+  width: 100%; min-height: 34px; padding: 6px 10px; text-align: left; font-size: 13px;
+  border: 1px solid var(--color-line-strong); border-radius: var(--radius-control);
+}
+.transport-bar:has(.pw-source-chip) .transport-more button:hover:not(:disabled) { border-color: #566070; }
+.transport-bar:has(.pw-source-chip) .transport-more button:disabled { opacity: .5; }
+.transport-bar:has(.pw-source-chip) > .transport-primary:has(select[aria-label="API 预设"]) .transport-more p { display: none; }
+.transport-bar:has(.pw-source-chip) > .transport-primary:has(select[aria-label="API 预设"])::after {
+  content: "Key、地址和自定义模型在「设置」里改；每家服务商的 Key 分开记住，切回来自动换上。"; font-size: 11.5px; line-height: 1.6; color: var(--color-fg-dim);
+}
+
+/* 中途换来源的确认框 */
+.pw-dialog {
+  margin: auto; width: min(24rem, calc(100vw - 32px)); padding: 18px; border: 1px solid var(--color-line-strong);
+  border-radius: 12px; background: var(--color-ink-800); color: var(--color-fg); box-shadow: 0 20px 48px rgb(0 0 0 / .6);
+}
+.pw-dialog::backdrop { background: rgb(0 0 0 / .5); }
+.pw-dialog h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.pw-dialog p { margin: 8px 0 0; font-size: 12.5px; line-height: 1.65; color: var(--color-fg-muted); }
+.pw-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.pw-dialog-actions button {
+  min-height: 34px; padding: 6px 12px; font-size: 13px; border-radius: var(--radius-control);
+  border: 1px solid var(--color-line-strong); background: none; color: var(--color-fg); cursor: pointer;
+}
+.pw-dialog-actions button.pw-primary { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-ink-900); font-weight: 600; }
+
+/* 宽窗口：接收页两栏改为左右各自往下排，不再因为对齐行而留出大块空白 */
+@media (width >= 960px) {
+  html:not([data-pw-narrow]) .intake-layout { display: block; }
+  html:not([data-pw-narrow]) .intake-layout::after { content: ""; display: block; clear: both; }
+  html:not([data-pw-narrow]) .intake-layout > * { margin: 0 326px 16px 0; }
+  html:not([data-pw-narrow]) .intake-layout > :is(.intake-original, .intake-references) {
+    float: right; clear: right; width: 310px; margin: 0 0 16px 0;
+  }
+  html:not([data-pw-narrow]) .intake-layout > .intake-rules { clear: both; margin-right: 0; }
+}
+
+/* ── 窄面板 ── */
+html[data-pw-narrow] .shell-header { gap: 4px 4px; padding: 6px 8px 8px; }
+html[data-pw-narrow] .shell-header .shell-title { display: none; }
+html[data-pw-narrow] .shell-header .primary-nav { flex: 1 1 auto; gap: 0; }
+html[data-pw-narrow] .shell-header .primary-nav button { padding: 6px 7px; font-size: 12.5px; }
+html[data-pw-narrow] .shell-header .window-menu summary { padding: 6px; }
+html[data-pw-narrow] .shell-header .shell-toggle { padding: 5px 8px; }
+html[data-pw-narrow] .shell-header > .transport-bar { order: 7; flex-basis: 100%; margin: 0; padding: 0; }
+html[data-pw-narrow] .pw-source-chip { flex: 1; max-width: none; min-height: 34px; }
+html[data-pw-narrow] .transport-bar:has(.pw-source-chip) > .transport-primary { left: 0; right: 0; width: auto; }
+
+html[data-pw-narrow] .shell-main { padding: 12px 10px 0; }
+html[data-pw-narrow] .shell-main .space-y-6 > :not(:last-child) { margin-bottom: 16px; }
+html[data-pw-narrow] .surface-row { padding: 12px; }
+html[data-pw-narrow] .section-title { margin-bottom: 8px; font-size: 14px; }
+html[data-pw-narrow] .intake-layout { gap: 10px; }
+html[data-pw-narrow] .stage-disclosure > summary { font-size: 13px; }
+
+/* 工作路径：卡片改成一张列表，每行一条线 */
+html[data-pw-narrow] .shell-main .grid:has(> button > h3) {
+  gap: 0; overflow: hidden; border: 1px solid var(--color-line); border-radius: var(--radius-panel); background: var(--color-ink-800);
+}
+html[data-pw-narrow] .shell-main .grid:has(> button > h3) > button {
+  position: relative; border: 0; border-radius: 0; padding: 11px 32px 11px 14px; background: none;
+}
+html[data-pw-narrow] .shell-main .grid:has(> button > h3) > button + button { border-top: 1px solid var(--color-line); }
+html[data-pw-narrow] .shell-main .grid:has(> button > h3) > button:hover { background: var(--color-ink-750); }
+html[data-pw-narrow] .shell-main .grid:has(> button > h3) > button::after {
+  content: "›"; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 18px; color: var(--color-fg-dim);
+}
+html[data-pw-narrow] .shell-main .grid:has(> button > h3) > button > p:first-of-type {
+  margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+html[data-pw-narrow] .shell-main .grid:has(> button > h3) > button > p:last-of-type { margin-top: 4px; font-size: 11px; }
+
+/* 接收页：图片区更紧凑 */
+html[data-pw-narrow] .intake-original > div.rounded-xl { border: 0; padding: 0; }
+html[data-pw-narrow] .intake-original img { width: 56px; height: 56px; }
+html[data-pw-narrow] .intake-layout label.border-dashed { padding-block: 12px; min-height: 0; }
+html[data-pw-narrow] .intake-layout textarea { min-height: 72px; }
+
+/* 方向建议：未选中的只显示“成像结果”一行，选中的展开全部细节 */
+html[data-pw-narrow] .shell-main button.rounded-xl:has(> dl) { padding: 10px 12px; }
+html[data-pw-narrow] .shell-main button.rounded-xl:has(> dl) > dl { margin-top: 6px; }
+html[data-pw-narrow] .shell-main button.rounded-xl:has(> dl) > dl > div { grid-template-columns: 4.6rem 1fr; }
+html[data-pw-narrow] .shell-main button.rounded-xl:not(.border-accent):has(> dl) > dl > div:not(:nth-child(2)) { display: none; }
+html[data-pw-narrow] .shell-main button.rounded-xl:not(.border-accent):has(> dl) > dl > div:nth-child(2) { grid-template-columns: 1fr; }
+html[data-pw-narrow] .shell-main button.rounded-xl:not(.border-accent):has(> dl) > dl > div:nth-child(2) > dt { display: none; }
+html[data-pw-narrow] .shell-main .space-y-3:has(> button.rounded-xl > dl) > :not(:last-child) { margin-bottom: 8px; }
+
+/* 底部操作条：贴边，主按钮占满剩余宽度 */
+html[data-pw-narrow] .wizard-actions { margin-inline: -10px; padding: 8px 10px; gap: 8px; }
+html[data-pw-narrow] .wizard-actions > button:last-of-type { flex: 1 1 auto; }
+html[data-pw-narrow] .wizard-actions > :not(button) { flex-basis: 100%; }
+
+/* ── 工作台交接条（在 React 界面之外） ── */
+#pw-workbench-nav {
+  gap: 6px 14px; padding: 5px max(24px, calc((100% - 1200px) / 2 + 24px));
+  background: var(--color-ink-850); border-bottom: 1px solid var(--color-line); font-size: 12px; color: var(--color-fg-muted);
+}
+#pw-workbench-nav .pw-wb-title { color: var(--color-fg-dim); }
+#pw-workbench-nav label { margin-left: auto; }
+#pw-workbench-nav input[type=checkbox] { accent-color: var(--color-accent); }
+#pw-workbench-nav .pw-wb-open {
+  padding: 3px 10px; border-color: var(--color-line-strong); background: var(--color-ink-800); color: var(--color-fg);
+}
+#pw-workbench-nav .pw-wb-open:hover { border-color: var(--color-accent); }
+html[data-pw-narrow] #pw-workbench-nav { flex-wrap: nowrap; padding: 4px 10px; gap: 8px; }
+html[data-pw-narrow] #pw-workbench-nav .pw-wb-title,
+html[data-pw-narrow] #pw-workbench-nav .pw-wb-long { display: none; }
+html[data-pw-narrow] #pw-workbench-nav label { margin-left: 0; margin-right: auto; white-space: nowrap; }
+html[data-pw-narrow] #pw-workbench-nav p:not(:empty) { flex-basis: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pw-workbench-output { border-radius: var(--radius-card); }

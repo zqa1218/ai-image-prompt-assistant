@@ -1,0 +1,63 @@
+appId: com.mjstudio.promptwizard041.workbench
+productName: 提示词助手 0.4.1 工作台版
+electronVersion: 42.11.12
+electronDist: apps/prompt-wizard-next/node_modules/electron/dist
+asar: true
+npmRebuild: false
+compression: normal
+directories:
+  app: .
+  output: release/installed-041
+  buildResources: apps/prompt-wizard-installed/assets
+extraMetadata:
+  name: prompt-wizard-041-workbench
+  version: 0.4.1-workbench.7
+  main: apps/prompt-wizard-installed/electron/main.mjs
+files:
+  - package.json
+  - apps/prompt-wizard-installed/dist/**/*
+  - apps/prompt-wizard-installed/server/**/*
+  - '!apps/prompt-wizard-installed/server/**/*.test.mjs'
+  - apps/prompt-wizard-installed/electron/**/*
+  - '!apps/prompt-wizard-installed/electron/**/*.test.mjs'
+  - apps/prompt-wizard-installed/assets/icon.ico
+  - apps/prompt-wizard-installed/data/**/*
+  - apps/prompt-wizard-installed/provenance.json
+  - integrations/prompt-wizard-041/mj-browser.mjs
+  - integrations/prompt-wizard-041/handoff.mjs
+  - integrations/prompt-wizard-041/smoke-desktop.mjs
+  - apps/studio/**/*
+  - packages/**/*
+  - contracts/**/*
+  - node_modules/ws/**/*
+  - node_modules/ajv/**/*
+  - node_modules/ajv-formats/**/*
+  - node_modules/fast-deep-equal/**/*
+  - node_modules/fast-uri/**/*
+  - node_modules/json-schema-traverse/**/*
+  - node_modules/require-from-string/**/*
+asarUnpack:
+  - apps/prompt-wizard-installed/server/*.ps1
+  - apps/prompt-wizard-installed/server/*.jsx
+  - apps/prompt-wizard-installed/electron/*.ps1
+extraResources:
+  - from: apps/prompt-wizard-installed/photoshop-plugin
+    to: photoshop-plugin
+win:
+  icon: apps/prompt-wizard-installed/assets/icon.ico
+  target:
+    - target: portable
+      arch: [x64]
+    - target: nsis
+      arch: [x64]
+  artifactName: Prompt-Wizard-041-Workbench-${version}-portable.${ext}
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 提示词助手 0.4.1 工作台版
+  uninstallDisplayName: 提示词助手 0.4.1 工作台版
+  artifactName: Prompt-Wizard-041-Workbench-Setup-${version}.${ext}

@@ -1,0 +1,58 @@
+appId: com.mjstudio.creativeworkbench.candidate
+productName: MJ Banana 创作工作台候选版
+electronVersion: 42.4.1
+asar: true
+npmRebuild: false
+compression: normal
+directories:
+  app: .
+  output: release/candidate
+  buildResources: apps/prompt-wizard-next/assets
+extraMetadata:
+  name: mj-banana-workbench-candidate
+  main: apps/prompt-wizard-next/electron/main.mjs
+  version: 0.4.0-dev.2
+files:
+  - package.json
+  - apps/prompt-wizard-next/dist-next/**/*
+  - apps/prompt-wizard-next/server/**/*
+  - '!apps/prompt-wizard-next/server/**/*.test.mjs'
+  - apps/prompt-wizard-next/electron/**/*
+  - '!apps/prompt-wizard-next/electron/**/*.test.mjs'
+  - apps/prompt-wizard-next/assets/icon.ico
+  - apps/prompt-wizard-next/data/**/*
+  - apps/studio/**/*
+  - packages/**/*
+  - '!packages/**/*.test.mjs'
+  - contracts/**/*
+  - node_modules/ws/**/*
+  - node_modules/ajv/**/*
+  - node_modules/ajv-formats/**/*
+  - node_modules/fast-deep-equal/**/*
+  - node_modules/fast-uri/**/*
+  - node_modules/json-schema-traverse/**/*
+  - node_modules/require-from-string/**/*
+asarUnpack:
+  - apps/prompt-wizard-next/server/photoshop-com-capture.ps1
+  - apps/prompt-wizard-next/server/photoshop-com-capture.jsx
+extraResources:
+  - from: apps/prompt-wizard-next/photoshop-plugin
+    to: photoshop-plugin
+win:
+  icon: apps/prompt-wizard-next/assets/icon.ico
+  target:
+    - target: portable
+      arch: [x64]
+    - target: nsis
+      arch: [x64]
+  artifactName: MJ-Banana-Workbench-Candidate-${version}-portable.${ext}
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MJ Banana 创作工作台候选版
+  uninstallDisplayName: MJ Banana 创作工作台候选版
+  artifactName: MJ-Banana-Workbench-Candidate-Setup-${version}.${ext}

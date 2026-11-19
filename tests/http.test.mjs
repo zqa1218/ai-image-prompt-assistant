@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createWorkbenchServer } from '../packages/http/server.mjs';
+import { makeDraft } from '../packages/core/draft.mjs';
+import http from 'node:http';
+
+const parent = path.resolve(fileURLToPath(new URL('../.test-output/', import.meta.url)));
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+test('same-origin API enforces Host, Origin, CSRF, media limits and durable idempotency', { timeout: 15000 }, async t => {
+  fs.mkdirSync(parent, { recursive: true }); const root = fs.mkdtempSync(path.join(parent, 'http-'));
+  const app = createWorkbenchServer({ dataRoot: path.join(root, 'data'), port: 0 }); await app.ready;
+  t.after(async () => { await app.close(); assert.ok(root.startsWith(parent + path.sep)); fs.rmSync(root, { recursive: true, force: true }); });
+  const metaResponse = await fetch(`${app.url}/api/meta`); assert.equal(metaResponse.status, 200); const meta = await metaResponse.json();
+  assert.equal(meta.version, '0.4.0-dev.1'); assert.ok(meta.csrfToken); assert.equal(meta.capabilities.versions['8.2'].editReferences, 4);
+  const foreign = await fetch(`${app.url}/api/meta`, { headers: { Origin: 'https://evil.example' } }); assert.equal(foreign.status, 403);
+  const invalidHostStatus = await new Promise((resolve, reject) => {
+    const request = http.request({ hostname: '127.0.0.1', port: new URL(app.url).port, path: '/api/meta', headers: { Host: 'evil.example' } }, response => { response.resume(); resolve(response.statusCode); });
+    request.on('error', reject); request.end();
+  });
+  assert.equal(invalidHostStatus, 421);
+  const noCsrf = await fetch(`${app.url}/api/tasks`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'missing_csrf' }, body: '{}' }); assert.equal(noCsrf.status, 403);
+  const writeHeaders = key => ({ 'x-workbench-csrf': meta.csrfToken, 'idempotency-key': key });
+  const uploadHeaders = { ...writeHeaders('upload_png_0001'), 'content-type': 'image/png', 'x-file-name': encodeURIComponent('结果 图.png') };
+  const uploaded = await fetch(`${app.url}/api/uploads`, { method: 'POST', headers: uploadHeaders, body: png }); assert.equal(uploaded.status, 201);
+  const upload = (await uploaded.json()).upload; assert.equal(upload.originalName, '结果 图.png'); assert.equal(upload.width, 1);
+  const replay = await fetch(`${app.url}/api/uploads`, { method: 'POST', headers: uploadHeaders, body: png }); assert.equal(replay.status, 201); assert.equal(replay.headers.get('idempotency-replayed'), 'true');
+  const conflict = await fetch(`${app.url}/api/uploads`, { method: 'POST', headers: uploadHeaders, body: Buffer.concat([png, Buffer.from([0])]) }); assert.equal(conflict.status, 409);
+  const wrongType = await fetch(`${app.url}/api/uploads`, { method: 'POST', headers: { ...writeHeaders('upload_wrong_01'), 'content-type': 'image/jpeg', 'x-file-name': 'fake.jpg' }, body: png }); assert.equal(wrongType.status, 400);
+
+  const draft = makeDraft('A calm forest'); draft.settings.modelVersion = '8.2';
+  draft.references.push({ assetId: 'reference_1', path: upload.path, mediaType: upload.mediaType, width: upload.width, height: upload.height, bytes: upload.bytes, sha256: upload.sha256, role: 'image_prompt', source: 'upload', analysisOnly: false });
+  const json = (body, key) => ({ method: 'POST', headers: { ...writeHeaders(key), 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const createdResponse = await fetch(`${app.url}/api/tasks`, json({ input: draft }, 'create_task_001')); assert.equal(createdResponse.status, 201);
+  const created = (await createdResponse.json()).task; assert.equal(created.revisions[0].references[0].sha256, upload.sha256);
+  const list = await (await fetch(`${app.url}/api/tasks`)).json(); assert.equal(list.tasks[0].status, 'draft');
+  const confirm = await fetch(`${app.url}/api/tasks/${draft.taskId}/confirm`, json({ revision: 1, reviews: { promptReviewed: true, settingsReviewed: true, referencesReviewed: true } }, 'confirm_task_01')); assert.equal(confirm.status, 200);
+  const handoff = await fetch(`${app.url}/api/tasks/${draft.taskId}/handoff`, json({ revision: 1 }, 'handoff_task_01')); assert.equal(handoff.status, 200);
+  const badPath = await fetch(`${app.url}/api/tasks/%E0%A4%A`); assert.equal(badPath.status, 400); assert.equal((await badPath.json()).error.code, 'INVALID_PATH');
+  assert.deepEqual((await (await fetch(`${app.url}/api/store/status`)).json()).lock, { locked: false });
+  fs.writeFileSync(path.join(app.store.root, 'write.lock'), JSON.stringify({ pid: process.pid }));
+  const lockedStatus = (await (await fetch(`${app.url}/api/store/status`)).json()).lock; assert.equal(lockedStatus.locked, true); assert.equal(lockedStatus.recoverable, false);
+  const refused = await fetch(`${app.url}/api/store/recover-lock`, json({}, 'recover_lock_01')); assert.equal(refused.status, 409);
+  const noCsrfRecover = await fetch(`${app.url}/api/store/recover-lock`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'recover_lock_02' }, body: '{}' }); assert.equal(noCsrfRecover.status, 403);
+  fs.writeFileSync(path.join(app.store.root, 'write.lock'), JSON.stringify({ pid: 2 ** 31 - 2 }));
+  const recovered = await fetch(`${app.url}/api/store/recover-lock`, json({}, 'recover_lock_03')); assert.equal(recovered.status, 200); assert.equal((await recovered.json()).recovered, true);
+  const handoffBody = await handoff.json(); assert.match(handoffBody.handoff.promptText, /A calm forest/); assert.equal(fs.existsSync(path.join(handoffBody.export.directory, 'website-checklist.txt')), true);
+  const afterHandoff = await (await fetch(`${app.url}/api/tasks/${draft.taskId}`)).json(); assert.equal(afterHandoff.task.runs.length, 0);
+  const submitted = await fetch(`${app.url}/api/tasks/${draft.taskId}/submissions`, json({ revision: 1, requestKey: 'website_submit_1', websiteUrl: null }, 'submission_api_1')); assert.equal(submitted.status, 201); const run = (await submitted.json()).run;
+  const imported = await fetch(`${app.url}/api/tasks/${draft.taskId}/results/import`, json({ revision: 1, runId: run.runId, uploads: [{ sha256: upload.sha256, originalName: '结果 图.png' }] }, 'import_result_1')); assert.equal(imported.status, 201); const result = (await imported.json()).results[0];
+  const selected = await fetch(`${app.url}/api/tasks/${draft.taskId}/results/${result.resultId}`, { method: 'PUT', headers: { ...writeHeaders('select_result_1'), 'content-type': 'application/json' }, body: JSON.stringify({ selected: true }) }); assert.equal(selected.status, 200);
+  const exported = await fetch(`${app.url}/api/tasks/${draft.taskId}/exports`, json({ revision: 1, runId: run.runId }, 'export_result_1')); assert.equal(exported.status, 200); assert.equal(fs.existsSync(path.join((await exported.json()).export.directory, 'results.json')), true);
+  const asset = await fetch(`${app.url}/api/assets/${upload.sha256}`); assert.equal(asset.status, 200); assert.equal(asset.headers.get('content-type'), 'image/png'); assert.deepEqual(Buffer.from(await asset.arrayBuffer()), png);
+  const page = await fetch(app.url); assert.equal(page.status, 200); assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/); assert.match(await page.text(), /MJ \/ Banana 创作工作台/);
+  const revisionModule = await fetch(`${app.url}/revision-state.js`); assert.equal(revisionModule.status, 200); assert.match(revisionModule.headers.get('content-type'), /text\/javascript/);
+});

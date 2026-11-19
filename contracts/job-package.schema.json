@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:mjstudio:job-package:0.1.0",
+  "title": "MJ / Banana task input revision",
+  "description": "An input snapshot, not a running job or proof of remote submission. Runtime semantic checks are required.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "taskId", "revision", "createdAt", "mode", "operation", "prompt", "references", "settings", "confirmation", "photoshopContext"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "taskId": { "$ref": "#/definitions/id" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "mode": { "enum": ["mj_web", "banana_api"] },
+    "operation": { "enum": ["create", "edit"] },
+    "prompt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["intent", "text", "source", "workflowId"],
+      "properties": {
+        "intent": { "type": "string" },
+        "text": { "type": "string" },
+        "source": { "enum": ["manual", "prompt_wizard", "import"] },
+        "workflowId": { "type": ["string", "null"] },
+        "exchange": {
+          "type": "object", "additionalProperties": false,
+          "required": ["schemaVersion", "workflowId", "artifact", "context", "target", "selectedParameterIndex", "images"],
+          "properties": {
+            "schemaVersion": { "const": "prompt-wizard-exchange/1" },
+            "workflowId": { "$ref": "urn:mjstudio:prompt-wizard-exchange:1#/properties/workflowId" },
+            "artifact": { "$ref": "urn:mjstudio:prompt-wizard-exchange:1#/properties/artifact" },
+            "context": { "$ref": "urn:mjstudio:prompt-wizard-exchange:1#/properties/context" },
+            "target": { "$ref": "urn:mjstudio:prompt-wizard-exchange:1#/properties/target" },
+            "selectedParameterIndex": { "$ref": "urn:mjstudio:prompt-wizard-exchange:1#/properties/selectedParameterIndex" },
+            "images": { "type": "array", "maxItems": 32, "items": {
+              "type": "object", "additionalProperties": false, "required": ["assetId", "role"],
+              "properties": {
+                "assetId": { "$ref": "#/definitions/id" },
+                "role": { "$ref": "#/definitions/asset/properties/role" },
+                "note": { "type": "string", "maxLength": 12000 },
+                "photoshop": { "$ref": "urn:mjstudio:prompt-wizard-exchange:1#/definitions/photoshop" }
+              }
+            } }
+          }
+        }
+      }
+    },
+    "references": { "type": "array", "items": { "$ref": "#/definitions/asset" } },
+    "settings": { "type": "object" },
+    "confirmation": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["revision", "confirmedAt", "promptReviewed", "settingsReviewed", "referencesReviewed"],
+          "properties": {
+            "revision": { "type": "integer", "minimum": 1 },
+            "confirmedAt": { "type": "string", "format": "date-time" },
+            "promptReviewed": { "const": true },
+            "settingsReviewed": { "const": true },
+            "referencesReviewed": { "const": true }
+          }
+        }
+      ]
+    },
+    "photoshopContext": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/photoshopContext" }]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "mj_web" } }, "required": ["mode"] },
+      "then": { "properties": { "settings": { "$ref": "#/definitions/mjSettings" } } },
+      "else": { "properties": { "settings": { "$ref": "#/definitions/bananaSettings" } } }
+    },
+    {
+      "if": { "properties": { "confirmation": { "type": "object" } }, "required": ["confirmation"] },
+      "then": { "properties": { "prompt": { "properties": { "text": { "type": "string", "pattern": "\\S" } } } } }
+    }
+  ],
+  "definitions": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+    "asset": {
+      "type": "object", "additionalProperties": false,
+      "required": ["assetId", "path", "mediaType", "width", "height", "bytes", "sha256", "role", "source", "analysisOnly"],
+      "properties": {
+        "assetId": { "$ref": "#/definitions/id" },
+        "path": { "type": "string", "pattern": "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*$" },
+        "mediaType": { "enum": ["image/png", "image/jpeg", "image/webp"] },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "role": { "enum": ["base", "image_prompt", "style_reference", "edit_reference", "character_reference", "mask"] },
+        "source": { "enum": ["photoshop", "upload", "result"] },
+        "analysisOnly": { "type": "boolean" }
+      }
+    },
+    "mjSettings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["modelVersion", "aspectRatio", "raw", "stylize", "chaos", "weird", "seed", "speed", "resolution", "extraParameters", "websiteChecklist"],
+      "properties": {
+        "modelVersion": { "type": ["string", "null"], "minLength": 1 },
+        "aspectRatio": { "type": ["string", "null"], "pattern": "^[1-9][0-9]*:[1-9][0-9]*$" },
+        "raw": { "type": ["boolean", "null"] },
+        "stylize": { "type": ["number", "null"], "minimum": 0 },
+        "chaos": { "type": ["number", "null"], "minimum": 0 },
+        "weird": { "type": ["number", "null"], "minimum": 0 },
+        "seed": { "type": ["integer", "null"], "minimum": 0 },
+        "speed": { "enum": ["fast", "relax", "turbo", null] },
+        "resolution": { "enum": ["sd", "hd", null] },
+        "extraParameters": { "type": "string" },
+        "websiteChecklist": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "bananaSettings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["providerId", "modelId", "aspectRatio", "resolution"],
+      "properties": {
+        "providerId": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+        "modelId": { "type": ["string", "null"], "minLength": 1 },
+        "aspectRatio": { "type": ["string", "null"], "pattern": "^[1-9][0-9]*:[1-9][0-9]*$" },
+        "resolution": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "bounds": {
+      "type": "object", "additionalProperties": false,
+      "required": ["left", "top", "right", "bottom"],
+      "properties": {
+        "left": { "type": "integer", "minimum": 0 },
+        "top": { "type": "integer", "minimum": 0 },
+        "right": { "type": "integer", "minimum": 1 },
+        "bottom": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "photoshopContext": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sessionId", "documentId", "documentName", "canvasWidth", "canvasHeight", "captureAssetId", "captureScope", "selectionBounds", "maskAssetId", "placement"],
+      "properties": {
+        "sessionId": { "$ref": "#/definitions/id" },
+        "documentId": { "type": "integer", "minimum": 1 },
+        "documentName": { "type": "string", "minLength": 1 },
+        "canvasWidth": { "type": "integer", "minimum": 1 },
+        "canvasHeight": { "type": "integer", "minimum": 1 },
+        "captureAssetId": { "$ref": "#/definitions/id" },
+        "captureScope": { "enum": ["canvas", "selection"] },
+        "selectionBounds": { "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/bounds" }] },
+        "maskAssetId": { "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/id" }] },
+        "placement": { "enum": ["fit_canvas", "fit_selection", "new_document"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "captureScope": { "const": "selection" } } },
+          "then": { "properties": { "selectionBounds": { "$ref": "#/definitions/bounds" } } },
+          "else": { "properties": { "selectionBounds": { "type": "null" }, "maskAssetId": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "placement": { "const": "fit_selection" } } },
+          "then": { "properties": { "captureScope": { "const": "selection" } } }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "prompt-wizard-compat",
+  "private": true,
+  "version": "0.4.1-integration.1",
+  "type": "module",
+  "main": "../../scripts/guard-compat-build.mjs",
+  "dependencies": {
+    "ws": "8.22.2"
+  },
+  "description": "AI 修图提示词助手：把底图、参考图和需求编译成可直接使用的修图提示词",
+  "author": "zqa1218",
+  "scripts": {
+    "build": "node ../../scripts/guard-compat-build.mjs",
+    "preview": "node ../../scripts/prompt-wizard-preview.mjs"
+  }
+}
